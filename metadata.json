@@ -1,0 +1,5 @@
+{
+  "name": "arthurOS",
+  "description": "A minimalist 4-level productivity system (Areas > Projects > Phases > Tasks) with resource management.",
+  "requestFramePermissions": []
+}
