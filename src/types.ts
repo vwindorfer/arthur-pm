@@ -39,6 +39,8 @@ export interface Phase {
   title: string;
   description?: string;
   status: Status;
+  startDate?: string;
+  endDate?: string;
   tasks: Task[];
   labels: string[];
   attachments?: Attachment[];

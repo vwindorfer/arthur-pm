@@ -122,6 +122,9 @@ export default function App() {
   const [kanbanGroup, setKanbanGroup] = useState<'status' | 'area' | 'project' | 'priority' | 'energy' | 'label'>('status');
   const [kanbanFilter, setKanbanFilter] = useState<{ status?: string, label?: string, priority?: string, energy?: string }>({});
 
+  // Area View State
+  const [areaProjectFilter, setAreaProjectFilter] = useState<string>('');
+
   const handleAddArea = (e: React.FormEvent) => {
     e.preventDefault();
     if (newAreaTitle.trim()) {
@@ -500,7 +503,7 @@ export default function App() {
                 </div>
               </div>
               {data.areas.filter(a => a.groupId === group.id).map(area => (
-                <button 
+                <button
                   key={area.id}
                   onClick={() => setActiveView({ type: 'area', id: area.id })}
                   className={cn(
@@ -512,6 +515,19 @@ export default function App() {
                   {area.title}
                 </button>
               ))}
+              {isAddingArea && isAddingArea.groupId === group.id && (
+                <form onSubmit={handleAddArea} className="px-3 py-2">
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Area name..."
+                    className="w-full bg-black/5 border-none rounded-lg px-3 py-1.5 text-sm focus:ring-1 focus:ring-accent outline-none"
+                    value={newAreaTitle}
+                    onChange={(e) => setNewAreaTitle(e.target.value)}
+                    onBlur={() => !newAreaTitle && setIsAddingArea(null)}
+                  />
+                </form>
+              )}
             </div>
           ))}
 
@@ -887,18 +903,33 @@ export default function App() {
                     <div className="flex items-center justify-between">
                       <h3 className="text-lg font-semibold flex items-center gap-2">
                         <Target size={20} className="text-accent" />
-                        Active Projects
+                        Projects
                       </h3>
-                      <button 
-                        onClick={() => setIsAddingProject(currentArea.id)}
-                        className="text-accent hover:text-accent/80 text-xs font-medium flex items-center gap-1"
-                      >
-                        <Plus size={14} />
-                        New Project
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 text-xs font-medium text-gray-400">
+                          <Filter size={12} />
+                          <select
+                            className="bg-transparent text-gray-900 focus:outline-none cursor-pointer text-xs"
+                            value={areaProjectFilter}
+                            onChange={(e) => setAreaProjectFilter(e.target.value)}
+                          >
+                            <option value="">All Status</option>
+                            <option value="Backlog">Backlog</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Done">Done</option>
+                          </select>
+                        </div>
+                        <button
+                          onClick={() => setIsAddingProject(currentArea.id)}
+                          className="text-accent hover:text-accent/80 text-xs font-medium flex items-center gap-1"
+                        >
+                          <Plus size={14} />
+                          New Project
+                        </button>
+                      </div>
                     </div>
                     <div className="grid gap-4">
-                      {currentArea.projects.filter(p => !searchQuery || matchesSearch(p.title, searchQuery) || matchesSearch(p.description, searchQuery) || p.labels.some(l => matchesSearch(l, searchQuery))).map(project => (
+                      {currentArea.projects.filter(p => (!areaProjectFilter || p.status === areaProjectFilter) && (!searchQuery || matchesSearch(p.title, searchQuery) || matchesSearch(p.description, searchQuery) || p.labels.some(l => matchesSearch(l, searchQuery)))).map(project => (
                         <ProjectCard 
                           key={project.id} 
                           project={project} 
@@ -1542,9 +1573,20 @@ function EditProjectModal({ project, areas, onClose, onSave, onMove }: { project
               </select>
             </div>
             <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Start Date</label>
+              <input
+                type="date"
+                className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
+                value={edited.startDate.split('T')[0]}
+                onChange={(e) => setEdited({ ...edited, startDate: new Date(e.target.value).toISOString() })}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">End Date</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
                 value={edited.endDate.split('T')[0]}
                 onChange={(e) => setEdited({ ...edited, endDate: new Date(e.target.value).toISOString() })}
@@ -2068,22 +2110,38 @@ function TaskList({ tasks, onToggle, onEdit, onDelete }: { tasks: Task[], onTogg
 }
 
 function ProjectCard({ project, onClick, onEdit, onDelete }: { project: Project, onClick: () => void, onEdit: (p: Project) => void, onDelete: (id: string) => void }) {
-  const completedTasks = project.phases.reduce((acc, phase) => 
-    acc + phase.tasks.filter(t => t.status === 'Done').length, 0
-  );
-  const totalTasks = project.phases.reduce((acc, phase) => 
-    acc + phase.tasks.length, 0
-  );
-  const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+  // Count ALL tasks: direct project tasks + tasks inside phases
+  const directDone = (project.tasks || []).filter(t => t.status === 'Done').length;
+  const phaseDone = project.phases.reduce((acc, phase) => acc + phase.tasks.filter(t => t.status === 'Done').length, 0);
+  const completedTasks = directDone + phaseDone;
+
+  const directTotal = (project.tasks || []).length;
+  const phaseTotal = project.phases.reduce((acc, phase) => acc + phase.tasks.length, 0);
+  const totalTasks = directTotal + phaseTotal;
+
+  const taskProgress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+
+  // Timeline progress: how far between start and end date
+  const now = Date.now();
+  const start = new Date(project.startDate).getTime();
+  const end = new Date(project.endDate).getTime();
+  const timelineProgress = start < end ? Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100)) : 0;
 
   return (
-    <div 
+    <div
       onClick={onClick}
       className="glass p-5 rounded-2xl hover:border-accent/30 transition-all cursor-pointer group"
     >
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1">
-          <h4 className="font-semibold text-gray-900 group-hover:text-accent transition-colors">{project.title}</h4>
+          <div className="flex items-center gap-2">
+            <h4 className="font-semibold text-gray-900 group-hover:text-accent transition-colors">{project.title}</h4>
+            <Badge className={cn(
+              project.status === 'Done' ? "bg-green-50 text-green-600" :
+              project.status === 'In Progress' ? "bg-accent/10 text-accent" :
+              "bg-black/5 text-gray-500"
+            )}>{project.status}</Badge>
+          </div>
           <p className="text-xs text-gray-500 mt-1 line-clamp-1">{project.description}</p>
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -2091,29 +2149,40 @@ function ProjectCard({ project, onClick, onEdit, onDelete }: { project: Project,
           <IconButton icon={Trash2} className="hover:text-red-500" onClick={(e) => { e.stopPropagation(); onDelete(project.id); }} />
         </div>
       </div>
-      
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-          <span>Progress</span>
-          <span>{Math.round(progress)}%</span>
+
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+            <span>Tasks</span>
+            <span>{completedTasks}/{totalTasks} ({Math.round(taskProgress)}%)</span>
+          </div>
+          <div className="h-1.5 w-full bg-black/5 rounded-full overflow-hidden">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${taskProgress}%` }}
+              className="h-full bg-accent"
+            />
+          </div>
         </div>
-        <div className="h-1.5 w-full bg-black/5 rounded-full overflow-hidden">
-          <motion.div 
-            initial={{ width: 0 }}
-            animate={{ width: `${progress}%` }}
-            className="h-full bg-accent"
-          />
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+            <span>Timeline</span>
+            <span>{Math.round(timelineProgress)}%</span>
+          </div>
+          <div className="h-1.5 w-full bg-black/5 rounded-full overflow-hidden">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${timelineProgress}%` }}
+              className={cn("h-full", timelineProgress > taskProgress + 20 ? "bg-red-400" : "bg-emerald-400")}
+            />
+          </div>
         </div>
       </div>
 
       <div className="flex items-center gap-4 mt-4 text-[10px] text-gray-400 font-medium uppercase tracking-wider">
         <div className="flex items-center gap-1">
-          <Clock size={12} />
-          {format(new Date(project.endDate), 'MMM d')}
-        </div>
-        <div className="flex items-center gap-1">
-          <CheckCircle2 size={12} />
-          {completedTasks}/{totalTasks}
+          <Calendar size={12} />
+          {format(new Date(project.startDate), 'MMM d')} – {format(new Date(project.endDate), 'MMM d')}
         </div>
         {project.labels && project.labels.length > 0 && (
           <div className="flex items-center gap-1 ml-auto">
@@ -2200,7 +2269,7 @@ function EditPhaseModal({ phase, onClose, onSave }: { phase: Phase, onClose: () 
           </div>
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Status</label>
-            <select 
+            <select
               className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
               value={edited.status}
               onChange={(e) => setEdited({ ...edited, status: e.target.value as Status })}
@@ -2209,6 +2278,26 @@ function EditPhaseModal({ phase, onClose, onSave }: { phase: Phase, onClose: () 
               <option value="In Progress">In Progress</option>
               <option value="Done">Done</option>
             </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Start Date</label>
+              <input
+                type="date"
+                className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
+                value={edited.startDate?.split('T')[0] || ''}
+                onChange={(e) => setEdited({ ...edited, startDate: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">End Date</label>
+              <input
+                type="date"
+                className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
+                value={edited.endDate?.split('T')[0] || ''}
+                onChange={(e) => setEdited({ ...edited, endDate: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
+              />
+            </div>
           </div>
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Labels</label>
