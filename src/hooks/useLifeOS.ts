@@ -5,6 +5,20 @@ import { useAuth } from '../contexts/AuthContext';
 
 const STORAGE_KEY = 'life_os_data';
 
+const DEFAULT_SETTINGS = {
+  taskStatuses: ['Backlog', 'In Progress', 'Done'],
+  projectStatuses: ['Backlog', 'In Progress', 'Done'],
+  phaseStatuses: ['Backlog', 'In Progress', 'Done'],
+  display: {
+    showPriority: true,
+    showEnergy: true,
+    showDeadline: true,
+    showLabels: true,
+    showAttachments: true,
+    showDescription: true,
+  }
+};
+
 const INITIAL_DATA: LifeOSData = {
   areaGroups: [],
   areas: [
@@ -27,7 +41,8 @@ const INITIAL_DATA: LifeOSData = {
       labels: []
     }
   ],
-  inbox: []
+  inbox: [],
+  settings: DEFAULT_SETTINGS
 };
 
 function normalizeData(parsed: any): LifeOSData {
@@ -39,6 +54,7 @@ function normalizeData(parsed: any): LifeOSData {
     contextTags: t.contextTags || []
   });
 
+  const settings = parsed.settings || {};
   return {
     ...parsed,
     areaGroups: parsed.areaGroups || [],
@@ -47,12 +63,14 @@ function normalizeData(parsed: any): LifeOSData {
       ...area,
       labels: area.labels || [],
       description: area.description || '',
+      resources: (area.resources || []),
       tasks: (area.tasks || []).map(normalizeTask),
       projects: (area.projects || []).map((project: any) => ({
         ...project,
         status: project.status || 'Backlog',
         labels: project.labels || [],
         attachments: project.attachments || [],
+        resources: (project.resources || []),
         tasks: (project.tasks || []).map(normalizeTask),
         phases: (project.phases || []).map((phase: any) => ({
           ...phase,
@@ -62,7 +80,13 @@ function normalizeData(parsed: any): LifeOSData {
           tasks: (phase.tasks || []).map(normalizeTask)
         }))
       }))
-    }))
+    })),
+    settings: {
+      taskStatuses: settings.taskStatuses || DEFAULT_SETTINGS.taskStatuses,
+      projectStatuses: settings.projectStatuses || DEFAULT_SETTINGS.projectStatuses,
+      phaseStatuses: settings.phaseStatuses || DEFAULT_SETTINGS.phaseStatuses,
+      display: { ...DEFAULT_SETTINGS.display, ...(settings.display || {}) },
+    }
   };
 }
 

@@ -1,4 +1,3 @@
-export type Status = 'Backlog' | 'In Progress' | 'Done';
 export type Priority = 'P1' | 'P2' | 'P3';
 export type Energy = 'High' | 'Low';
 
@@ -6,8 +5,11 @@ export interface Resource {
   id: string;
   title: string;
   content: string;
-  type: 'link' | 'note';
+  type: 'link' | 'note' | 'file';
   url?: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: number;
   createdAt: string;
 }
 
@@ -24,7 +26,7 @@ export interface Task {
   id: string;
   title: string;
   description?: string;
-  status: Status;
+  status: string;
   priority: Priority;
   contextTags: string[];
   energy: Energy;
@@ -38,7 +40,7 @@ export interface Phase {
   id: string;
   title: string;
   description?: string;
-  status: Status;
+  status: string;
   startDate?: string;
   endDate?: string;
   tasks: Task[];
@@ -50,7 +52,7 @@ export interface Project {
   id: string;
   title: string;
   description: string;
-  status: Status;
+  status: string;
   startDate: string;
   endDate: string;
   tasks: Task[];
@@ -77,8 +79,25 @@ export interface Area {
   groupId?: string;
 }
 
+export interface DisplaySettings {
+  showPriority: boolean;
+  showEnergy: boolean;
+  showDeadline: boolean;
+  showLabels: boolean;
+  showAttachments: boolean;
+  showDescription: boolean;
+}
+
+export interface AppSettings {
+  taskStatuses: string[];
+  projectStatuses: string[];
+  phaseStatuses: string[];
+  display: DisplaySettings;
+}
+
 export interface LifeOSData {
   areaGroups: AreaGroup[];
   areas: Area[];
   inbox: Task[];
+  settings?: AppSettings;
 }

@@ -38,7 +38,17 @@ import {
   LogOut,
   Cloud,
   CloudOff,
-  Loader2
+  Loader2,
+  GripVertical,
+  Eye,
+  EyeOff,
+  ExternalLink,
+  Image,
+  Youtube,
+  FileSpreadsheet,
+  FileType,
+  Download,
+  ChevronUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -46,7 +56,7 @@ import { twMerge } from 'tailwind-merge';
 import { useLifeOS } from './hooks/useLifeOS';
 import { useAuth } from './contexts/AuthContext';
 import AuthPage from './components/AuthPage';
-import { Area, Project, Phase, Task, Status, Priority, Energy, Resource, Attachment, LifeOSData, AreaGroup } from './types';
+import { Area, Project, Phase, Task, Priority, Energy, Resource, Attachment, LifeOSData, AreaGroup, AppSettings, DisplaySettings } from './types';
 import { format } from 'date-fns';
 
 function cn(...inputs: ClassValue[]) {
@@ -124,6 +134,22 @@ export default function App() {
 
   // Area View State
   const [areaProjectFilter, setAreaProjectFilter] = useState<string>('');
+
+  // Resource/File preview modal
+  const [previewResource, setPreviewResource] = useState<Resource | null>(null);
+  const [addingResourceTo, setAddingResourceTo] = useState<{ type: 'area' | 'project', id: string } | null>(null);
+
+  // Drag reorder state
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
+
+  // Settings helper
+  const appSettings = data.settings || {
+    taskStatuses: ['Backlog', 'In Progress', 'Done'],
+    projectStatuses: ['Backlog', 'In Progress', 'Done'],
+    phaseStatuses: ['Backlog', 'In Progress', 'Done'],
+    display: { showPriority: true, showEnergy: true, showDeadline: true, showLabels: true, showAttachments: true, showDescription: true }
+  };
+  const display = appSettings.display;
 
   const handleAddArea = (e: React.FormEvent) => {
     e.preventDefault();
@@ -418,6 +444,81 @@ export default function App() {
           updateTaskStatus(phase.tasks);
         });
       });
+    });
+    updateData(newData);
+  };
+
+  // Resource handlers
+  const handleAddResource = (resource: Resource, targetType: 'area' | 'project', targetId: string) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    if (targetType === 'area') {
+      const area = newData.areas.find((a: any) => a.id === targetId);
+      if (area) area.resources.push(resource);
+    } else {
+      newData.areas.forEach((area: any) => {
+        const project = area.projects.find((p: any) => p.id === targetId);
+        if (project) project.resources.push(resource);
+      });
+    }
+    updateData(newData);
+    setAddingResourceTo(null);
+  };
+
+  const handleDeleteResource = (resourceId: string, targetType: 'area' | 'project', targetId: string) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    if (targetType === 'area') {
+      const area = newData.areas.find((a: any) => a.id === targetId);
+      if (area) area.resources = area.resources.filter((r: any) => r.id !== resourceId);
+    } else {
+      newData.areas.forEach((area: any) => {
+        const project = area.projects.find((p: any) => p.id === targetId);
+        if (project) project.resources = project.resources.filter((r: any) => r.id !== resourceId);
+      });
+    }
+    updateData(newData);
+  };
+
+  // Drag reorder handler
+  const handleReorder = (list: any[], fromIndex: number, toIndex: number) => {
+    const result = [...list];
+    const [removed] = result.splice(fromIndex, 1);
+    result.splice(toIndex, 0, removed);
+    return result;
+  };
+
+  const reorderTasks = (tasks: Task[], fromIndex: number, toIndex: number, target: 'inbox' | 'area' | 'project' | 'phase', targetId?: string) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    if (target === 'inbox') {
+      newData.inbox = handleReorder(newData.inbox, fromIndex, toIndex);
+    } else if (target === 'area' && targetId) {
+      const area = newData.areas.find((a: any) => a.id === targetId);
+      if (area) area.tasks = handleReorder(area.tasks, fromIndex, toIndex);
+    } else if (target === 'project' && targetId) {
+      newData.areas.forEach((a: any) => {
+        const p = a.projects.find((p: any) => p.id === targetId);
+        if (p) p.tasks = handleReorder(p.tasks, fromIndex, toIndex);
+      });
+    } else if (target === 'phase' && targetId) {
+      newData.areas.forEach((a: any) => a.projects.forEach((p: any) => {
+        const ph = p.phases.find((ph: any) => ph.id === targetId);
+        if (ph) ph.tasks = handleReorder(ph.tasks, fromIndex, toIndex);
+      }));
+    }
+    updateData(newData);
+  };
+
+  const reorderProjects = (areaId: string, fromIndex: number, toIndex: number) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    const area = newData.areas.find((a: any) => a.id === areaId);
+    if (area) area.projects = handleReorder(area.projects, fromIndex, toIndex);
+    updateData(newData);
+  };
+
+  const reorderPhases = (projectId: string, fromIndex: number, toIndex: number) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    newData.areas.forEach((a: any) => {
+      const p = a.projects.find((p: any) => p.id === projectId);
+      if (p) p.phases = handleReorder(p.phases, fromIndex, toIndex);
     });
     updateData(newData);
   };
@@ -745,15 +846,13 @@ export default function App() {
                     <div className="flex items-center gap-2 text-xs font-medium text-gray-400">
                       <Filter size={14} />
                       Filter:
-                      <select 
+                      <select
                         className="bg-transparent text-gray-900 focus:outline-none cursor-pointer"
                         value={inboxFilter.status || ''}
                         onChange={(e) => setInboxFilter({ ...inboxFilter, status: e.target.value || undefined })}
                       >
                         <option value="">All Status</option>
-                        <option value="Backlog">Backlog</option>
-                        <option value="In Progress">In Progress</option>
-                        <option value="Done">Done</option>
+                        {appSettings.taskStatuses.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                       <select 
                         className="bg-transparent text-gray-900 focus:outline-none cursor-pointer ml-2"
@@ -819,9 +918,7 @@ export default function App() {
                           onChange={(e) => setKanbanFilter({ ...kanbanFilter, status: e.target.value || undefined })}
                         >
                           <option value="">All Status</option>
-                          <option value="Backlog">Backlog</option>
-                          <option value="In Progress">In Progress</option>
-                          <option value="Done">Done</option>
+                          {appSettings.taskStatuses.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       )}
                       {kanbanGroup !== 'priority' && (
@@ -897,7 +994,9 @@ export default function App() {
                 />
               )}
 
-              {activeView.type === 'area' && currentArea && (
+              {activeView.type === 'area' && currentArea && (() => {
+                const filteredProjects = currentArea.projects.filter(p => (!areaProjectFilter || p.status === areaProjectFilter) && (!searchQuery || matchesSearch(p.title, searchQuery) || matchesSearch(p.description, searchQuery) || p.labels.some(l => matchesSearch(l, searchQuery))));
+                return (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-6">
                     <div className="flex items-center justify-between">
@@ -914,9 +1013,7 @@ export default function App() {
                             onChange={(e) => setAreaProjectFilter(e.target.value)}
                           >
                             <option value="">All Status</option>
-                            <option value="Backlog">Backlog</option>
-                            <option value="In Progress">In Progress</option>
-                            <option value="Done">Done</option>
+                            {appSettings.projectStatuses.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
                         </div>
                         <button
@@ -929,14 +1026,30 @@ export default function App() {
                       </div>
                     </div>
                     <div className="grid gap-4">
-                      {currentArea.projects.filter(p => (!areaProjectFilter || p.status === areaProjectFilter) && (!searchQuery || matchesSearch(p.title, searchQuery) || matchesSearch(p.description, searchQuery) || p.labels.some(l => matchesSearch(l, searchQuery)))).map(project => (
-                        <ProjectCard 
-                          key={project.id} 
-                          project={project} 
-                          onClick={() => setActiveView({ type: 'project', id: project.id, parentId: currentArea.id })} 
-                          onEdit={setEditingProject}
-                          onDelete={deleteProject}
-                        />
+                      {filteredProjects.map((project, idx) => (
+                        <div
+                          key={project.id}
+                          draggable
+                          onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDraggedItemId(project.id); }}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            if (draggedItemId && draggedItemId !== project.id) {
+                              const fromIdx = currentArea.projects.findIndex(p => p.id === draggedItemId);
+                              const toIdx = currentArea.projects.findIndex(p => p.id === project.id);
+                              if (fromIdx !== -1 && toIdx !== -1) reorderProjects(currentArea.id, fromIdx, toIdx);
+                            }
+                            setDraggedItemId(null);
+                          }}
+                          onDragEnd={() => setDraggedItemId(null)}
+                        >
+                          <ProjectCard
+                            project={project}
+                            onClick={() => setActiveView({ type: 'project', id: project.id, parentId: currentArea.id })}
+                            onEdit={setEditingProject}
+                            onDelete={deleteProject}
+                          />
+                        </div>
                       ))}
                       {currentArea.projects.length === 0 && (
                         <div className="p-12 glass rounded-2xl flex flex-col items-center justify-center text-gray-400 border-dashed">
@@ -952,7 +1065,7 @@ export default function App() {
                           <CheckCircle2 size={20} className="text-accent" />
                           Area Tasks
                         </h3>
-                        <button 
+                        <button
                           onClick={() => setIsAddingTask({ target: 'area', id: currentArea.id })}
                           className="text-accent hover:text-accent/80 text-xs font-medium flex items-center gap-1"
                         >
@@ -965,6 +1078,8 @@ export default function App() {
                         onToggle={toggleTaskStatus}
                         onEdit={setEditingTask}
                         onDelete={deleteTask}
+                        display={display}
+                        onReorder={(from, to) => reorderTasks(currentArea.tasks, from, to, 'area', currentArea.id)}
                       />
                     </div>
                   </div>
@@ -973,10 +1088,16 @@ export default function App() {
                       <FileText size={20} className="text-accent" />
                       Resource Library
                     </h3>
-                    <ResourceList resources={currentArea.resources} />
+                    <ResourceList
+                      resources={currentArea.resources}
+                      onAdd={(r) => handleAddResource(r, 'area', currentArea.id)}
+                      onDelete={(id) => handleDeleteResource(id, 'area', currentArea.id)}
+                      onPreview={setPreviewResource}
+                    />
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               {activeView.type === 'project' && currentProject && (
                 <div className="space-y-8">
@@ -996,10 +1117,8 @@ export default function App() {
                         <Badge className="bg-accent/10 text-accent border-none">{currentProject.status}</Badge>
                       </div>
                     </div>
-                    <div className="flex -space-x-2">
-                      {[1, 2, 3].map(i => (
-                        <div key={i} className="w-8 h-8 rounded-full border-2 border-white bg-gray-200" />
-                      ))}
+                    <div className="flex items-center gap-3">
+                      <IconButton icon={Edit2} onClick={() => setEditingProject(currentProject)} />
                     </div>
                   </div>
 
@@ -1008,7 +1127,7 @@ export default function App() {
                       <div className="space-y-4">
                         <div className="flex items-center justify-between">
                           <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Project Tasks</h4>
-                          <button 
+                          <button
                             onClick={() => setIsAddingTask({ target: 'project', id: currentProject.id })}
                             className="text-accent hover:text-accent/80 text-xs font-medium flex items-center gap-1"
                           >
@@ -1021,13 +1140,32 @@ export default function App() {
                           onToggle={toggleTaskStatus}
                           onEdit={setEditingTask}
                           onDelete={deleteTask}
+                          display={display}
+                          onReorder={(from, to) => reorderTasks(currentProject.tasks, from, to, 'project', currentProject.id)}
                         />
                       </div>
 
-                      {currentProject.phases.map(phase => (
-                        <div key={phase.id} className="space-y-4">
+                      {currentProject.phases.map((phase, phaseIdx) => (
+                        <div
+                          key={phase.id}
+                          className="space-y-4"
+                          draggable
+                          onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDraggedItemId(phase.id); }}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            if (draggedItemId && draggedItemId !== phase.id) {
+                              const fromIdx = currentProject.phases.findIndex(ph => ph.id === draggedItemId);
+                              const toIdx = currentProject.phases.findIndex(ph => ph.id === phase.id);
+                              if (fromIdx !== -1 && toIdx !== -1) reorderPhases(currentProject.id, fromIdx, toIdx);
+                            }
+                            setDraggedItemId(null);
+                          }}
+                          onDragEnd={() => setDraggedItemId(null)}
+                        >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
+                              <div className="cursor-grab text-gray-300 hover:text-gray-400"><GripVertical size={16} /></div>
                               <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest">{phase.title}</h4>
                               <Badge className="bg-black/5 text-gray-500 border-none text-[10px]">{phase.status}</Badge>
                             </div>
@@ -1037,16 +1175,16 @@ export default function App() {
                               <label className="text-accent hover:text-accent/80 text-xs font-medium flex items-center gap-1 cursor-pointer">
                                 <Upload size={14} />
                                 Upload
-                                <input 
-                                  type="file" 
-                                  className="hidden" 
+                                <input
+                                  type="file"
+                                  className="hidden"
                                   onChange={(e) => {
                                     const file = e.target.files?.[0];
                                     if (file) handleFileUpload(file, phase.id, 'phase');
-                                  }} 
+                                  }}
                                 />
                               </label>
-                              <button 
+                              <button
                                 onClick={() => setIsAddingTask({ target: 'phase', id: phase.id })}
                                 className="text-accent hover:text-accent/80 text-xs font-medium flex items-center gap-1"
                               >
@@ -1065,11 +1203,24 @@ export default function App() {
                               ))}
                             </div>
                           )}
+                          {phase.attachments && phase.attachments.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mb-2">
+                              {phase.attachments.map(att => (
+                                <div key={att.id} className="flex items-center gap-2 bg-black/5 rounded-lg px-2 py-1 text-[10px] text-gray-500">
+                                  <File size={10} />
+                                  <span className="truncate max-w-[120px]">{att.name}</span>
+                                  <span className="text-gray-400">{(att.size / 1024).toFixed(1)} KB</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           <TaskList
                             tasks={phase.tasks.filter(t => t.status !== 'Done').filter(t => taskMatchesSearch(t, searchQuery))}
                             onToggle={toggleTaskStatus}
                             onEdit={setEditingTask}
                             onDelete={deleteTask}
+                            display={display}
+                            onReorder={(from, to) => reorderTasks(phase.tasks, from, to, 'phase', phase.id)}
                           />
                         </div>
                       ))}
@@ -1085,7 +1236,12 @@ export default function App() {
                         <FileText size={20} className="text-accent" />
                         Project Resources
                       </h3>
-                      <ResourceList resources={currentProject.resources} />
+                      <ResourceList
+                        resources={currentProject.resources}
+                        onAdd={(r) => handleAddResource(r, 'project', currentProject.id)}
+                        onDelete={(id) => handleDeleteResource(id, 'project', currentProject.id)}
+                        onPreview={setPreviewResource}
+                      />
                     </div>
                   </div>
                 </div>
@@ -1124,37 +1280,46 @@ export default function App() {
           />
         )}
         {editingTask && (
-          <EditTaskModal 
-            task={editingTask} 
+          <EditTaskModal
+            task={editingTask}
             data={data}
-            onClose={() => setEditingTask(null)} 
-            onSave={updateTask} 
+            appSettings={appSettings}
+            onClose={() => setEditingTask(null)}
+            onSave={updateTask}
             onMove={moveTask}
           />
         )}
         {editingProject && (
-          <EditProjectModal 
-            project={editingProject} 
+          <EditProjectModal
+            project={editingProject}
             areas={data.areas}
-            onClose={() => setEditingProject(null)} 
-            onSave={updateProject} 
+            appSettings={appSettings}
+            onClose={() => setEditingProject(null)}
+            onSave={updateProject}
             onMove={moveProject}
           />
         )}
         {editingPhase && (
-          <EditPhaseModal 
-            phase={editingPhase} 
-            onClose={() => setEditingPhase(null)} 
-            onSave={updatePhase} 
+          <EditPhaseModal
+            phase={editingPhase}
+            appSettings={appSettings}
+            onClose={() => setEditingPhase(null)}
+            onSave={updatePhase}
           />
         )}
         {editingArea && (
-          <EditAreaModal 
-            area={editingArea} 
+          <EditAreaModal
+            area={editingArea}
             areaGroups={data.areaGroups || []}
-            onClose={() => setEditingArea(null)} 
-            onSave={updateArea} 
+            onClose={() => setEditingArea(null)}
+            onSave={updateArea}
             onDelete={deleteArea}
+          />
+        )}
+        {previewResource && (
+          <FilePreviewModal
+            resource={previewResource}
+            onClose={() => setPreviewResource(null)}
           />
         )}
       </AnimatePresence>
@@ -1236,7 +1401,7 @@ function CreationModal({ title, placeholder, onClose, onConfirm, data, initialTa
   );
 }
 
-function EditTaskModal({ task, data, onClose, onSave, onMove }: { task: Task, data: LifeOSData, onClose: () => void, onSave: (t: Task) => void, onMove: (id: string, type: 'inbox' | 'area' | 'project' | 'phase', targetId?: string) => void }) {
+function EditTaskModal({ task, data, appSettings, onClose, onSave, onMove }: { task: Task, data: LifeOSData, appSettings: AppSettings, onClose: () => void, onSave: (t: Task) => void, onMove: (id: string, type: 'inbox' | 'area' | 'project' | 'phase', targetId?: string) => void }) {
   const [edited, setEdited] = useState<Task>({ ...task });
   const [newLabel, setNewLabel] = useState('');
   
@@ -1323,19 +1488,17 @@ function EditTaskModal({ task, data, onClose, onSave, onMove }: { task: Task, da
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Status</label>
-              <select 
+              <select
                 className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
                 value={edited.status}
-                onChange={(e) => setEdited({ ...edited, status: e.target.value as Status })}
+                onChange={(e) => setEdited({ ...edited, status: e.target.value as string })}
               >
-                <option value="Backlog">Backlog</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Done">Done</option>
+                {appSettings.taskStatuses.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Priority</label>
-              <select 
+              <select
                 className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
                 value={edited.priority}
                 onChange={(e) => setEdited({ ...edited, priority: e.target.value as Priority })}
@@ -1510,7 +1673,7 @@ function EditTaskModal({ task, data, onClose, onSave, onMove }: { task: Task, da
   );
 }
 
-function EditProjectModal({ project, areas, onClose, onSave, onMove }: { project: Project, areas: Area[], onClose: () => void, onSave: (p: Project) => void, onMove: (id: string, targetAreaId: string) => void }) {
+function EditProjectModal({ project, areas, appSettings, onClose, onSave, onMove }: { project: Project, areas: Area[], appSettings: AppSettings, onClose: () => void, onSave: (p: Project) => void, onMove: (id: string, targetAreaId: string) => void }) {
   const [edited, setEdited] = useState<Project>({ ...project });
   const [newLabel, setNewLabel] = useState('');
   const [moveTargetAreaId, setMoveTargetAreaId] = useState(areas[0]?.id || '');
@@ -1562,14 +1725,12 @@ function EditProjectModal({ project, areas, onClose, onSave, onMove }: { project
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Status</label>
-              <select 
+              <select
                 className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
                 value={edited.status}
-                onChange={(e) => setEdited({ ...edited, status: e.target.value as Status })}
+                onChange={(e) => setEdited({ ...edited, status: e.target.value as string })}
               >
-                <option value="Backlog">Backlog</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Done">Done</option>
+                {appSettings.projectStatuses.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div>
@@ -1964,8 +2125,99 @@ function CompletedView({ data, searchQuery, onToggle, onEdit, onDelete }: { data
 }
 
 function SettingsView({ data, updateData, deleteArea }: { data: any, updateData: any, deleteArea: any }) {
+  const settings: AppSettings = data.settings || {
+    taskStatuses: ['Backlog', 'In Progress', 'Done'],
+    projectStatuses: ['Backlog', 'In Progress', 'Done'],
+    phaseStatuses: ['Backlog', 'In Progress', 'Done'],
+    display: { showPriority: true, showEnergy: true, showDeadline: true, showLabels: true, showAttachments: true, showDescription: true }
+  };
+
+  const [newTaskStatus, setNewTaskStatus] = useState('');
+  const [newProjectStatus, setNewProjectStatus] = useState('');
+  const [newPhaseStatus, setNewPhaseStatus] = useState('');
+
+  const updateSettings = (patch: Partial<AppSettings>) => {
+    updateData({ ...data, settings: { ...settings, ...patch } });
+  };
+
+  const addStatus = (type: 'taskStatuses' | 'projectStatuses' | 'phaseStatuses', value: string, setter: (v: string) => void) => {
+    if (value.trim() && !settings[type].includes(value.trim())) {
+      updateSettings({ [type]: [...settings[type], value.trim()] });
+      setter('');
+    }
+  };
+
+  const removeStatus = (type: 'taskStatuses' | 'projectStatuses' | 'phaseStatuses', value: string) => {
+    if (settings[type].length > 1) {
+      updateSettings({ [type]: settings[type].filter(s => s !== value) });
+    }
+  };
+
+  const toggleDisplay = (key: keyof DisplaySettings) => {
+    updateSettings({ display: { ...settings.display, [key]: !settings.display[key] } });
+  };
+
   return (
     <div className="max-w-2xl space-y-8">
+      <section className="space-y-4">
+        <h3 className="text-lg font-semibold">Display Preferences</h3>
+        <div className="glass p-6 rounded-2xl space-y-3">
+          <p className="text-xs text-gray-400 mb-2">Choose which fields to show on task cards.</p>
+          {([
+            ['showPriority', 'Priority'],
+            ['showEnergy', 'Energy Level'],
+            ['showDeadline', 'Deadline'],
+            ['showLabels', 'Labels'],
+            ['showAttachments', 'Attachments'],
+            ['showDescription', 'Description'],
+          ] as [keyof DisplaySettings, string][]).map(([key, label]) => (
+            <div key={key} className="flex items-center justify-between py-2">
+              <span className="text-sm font-medium text-gray-700">{label}</span>
+              <button
+                onClick={() => toggleDisplay(key)}
+                className={cn("w-10 h-6 rounded-full transition-colors flex items-center px-1", settings.display[key] ? "bg-accent justify-end" : "bg-black/10 justify-start")}
+              >
+                <div className="w-4 h-4 bg-white rounded-full shadow-sm" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h3 className="text-lg font-semibold">Custom Statuses</h3>
+        {([
+          ['taskStatuses', 'Task Statuses', newTaskStatus, setNewTaskStatus],
+          ['projectStatuses', 'Project Statuses', newProjectStatus, setNewProjectStatus],
+          ['phaseStatuses', 'Phase Statuses', newPhaseStatus, setNewPhaseStatus],
+        ] as [keyof Pick<AppSettings, 'taskStatuses' | 'projectStatuses' | 'phaseStatuses'>, string, string, (v: string) => void][]).map(([key, label, value, setter]) => (
+          <div key={key} className="glass p-4 rounded-xl space-y-3">
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{label}</h4>
+            <div className="flex flex-wrap gap-2">
+              {settings[key].map((status: string) => (
+                <span key={status} className="bg-accent/10 text-accent px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2">
+                  {status}
+                  {settings[key].length > 1 && (
+                    <button onClick={() => removeStatus(key, status)} className="hover:text-red-500 transition-colors"><X size={12} /></button>
+                  )}
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                className="flex-1 bg-black/5 border-none rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-accent outline-none"
+                placeholder="Add new status..."
+                value={value}
+                onChange={(e) => setter(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addStatus(key, value, setter)}
+              />
+              <button onClick={() => addStatus(key, value, setter)} className="p-2 bg-accent text-white rounded-lg"><Plus size={16} /></button>
+            </div>
+          </div>
+        ))}
+      </section>
+
       <section className="space-y-4">
         <h3 className="text-lg font-semibold">Manage Areas</h3>
         <div className="space-y-2">
@@ -1980,7 +2232,7 @@ function SettingsView({ data, updateData, deleteArea }: { data: any, updateData:
                   <p className="text-xs text-gray-400">{area.projects.length} Projects</p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => deleteArea(area.id)}
                 className="p-2 text-gray-400 hover:text-red-500 transition-colors"
               >
@@ -1994,22 +2246,22 @@ function SettingsView({ data, updateData, deleteArea }: { data: any, updateData:
       <section className="space-y-4">
         <h3 className="text-lg font-semibold">Data Management</h3>
         <div className="glass p-6 rounded-2xl space-y-4">
-          <p className="text-sm text-gray-500">Your data is stored locally in your browser. You can export it or reset the application.</p>
+          <p className="text-sm text-gray-500">Your data is synced to the cloud. You can export it or reset the application.</p>
           <div className="flex gap-3">
-            <button 
+            <button
               onClick={() => {
                 const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = 'lifeos-data.json';
+                a.download = 'arthuros-data.json';
                 a.click();
               }}
               className="px-4 py-2 bg-black/5 hover:bg-black/10 rounded-full text-xs font-medium transition-colors"
             >
               Export Data
             </button>
-            <button 
+            <button
               onClick={() => {
                 if (confirm('Are you sure you want to reset all data? This cannot be undone.')) {
                   localStorage.clear();
@@ -2027,25 +2279,60 @@ function SettingsView({ data, updateData, deleteArea }: { data: any, updateData:
   );
 }
 
-function TaskList({ tasks, onToggle, onEdit, onDelete }: { tasks: Task[], onToggle: (id: string) => void, onEdit: (t: Task) => void, onDelete: (id: string) => void }) {
+function TaskList({ tasks, onToggle, onEdit, onDelete, display, onReorder }: { tasks: Task[], onToggle: (id: string) => void, onEdit: (t: Task) => void, onDelete: (id: string) => void, display?: DisplaySettings, onReorder?: (fromIndex: number, toIndex: number) => void }) {
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, idx: number) => {
+    setDragIdx(idx);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    setOverIdx(idx);
+  };
+  const handleDrop = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    if (dragIdx !== null && dragIdx !== idx && onReorder) {
+      onReorder(dragIdx, idx);
+    }
+    setDragIdx(null);
+    setOverIdx(null);
+  };
+
+  const d = display || { showPriority: true, showEnergy: true, showDeadline: true, showLabels: true, showAttachments: true, showDescription: true };
+
   return (
     <div className="space-y-2">
-      {tasks.map((task: any) => (
-        <div 
-          key={task.id} 
-          className="group glass p-4 rounded-xl flex items-center gap-4 hover:border-accent/30 transition-all cursor-pointer"
+      {tasks.map((task: any, idx: number) => (
+        <div
+          key={task.id}
+          draggable={!!onReorder}
+          onDragStart={(e) => handleDragStart(e, idx)}
+          onDragOver={(e) => handleDragOver(e, idx)}
+          onDrop={(e) => handleDrop(e, idx)}
+          onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+          className={cn(
+            "group glass p-4 rounded-xl flex items-center gap-4 hover:border-accent/30 transition-all cursor-pointer",
+            overIdx === idx && dragIdx !== null && dragIdx !== idx && "border-accent/50 bg-accent/5"
+          )}
           onClick={() => onEdit(task)}
         >
-          <button 
+          {onReorder && (
+            <div className="cursor-grab text-gray-300 hover:text-gray-400 shrink-0" onMouseDown={(e) => e.stopPropagation()}>
+              <GripVertical size={16} />
+            </div>
+          )}
+          <button
             onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}
             className={cn(
-              "transition-colors",
+              "transition-colors shrink-0",
               task.status === 'Done' ? "text-accent" : "text-gray-300 group-hover:text-gray-400"
             )}
           >
             {task.status === 'Done' ? <CheckCircle2 size={20} /> : <Circle size={20} />}
           </button>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <h5 className={cn(
               "text-sm font-medium transition-all",
               task.status === 'Done' && "text-gray-400 line-through"
@@ -2060,35 +2347,39 @@ function TaskList({ tasks, onToggle, onEdit, onDelete }: { tasks: Task[], onTogg
                 {task.phaseName && ` > ${task.phaseName}`}
               </div>
             )}
-            {task.description && (
+            {d.showDescription && task.description && (
               <p className="text-xs text-gray-500 mt-1 line-clamp-1">{task.description}</p>
             )}
             <div className="flex items-center gap-3 mt-1 flex-wrap">
-              <Badge className={cn(
-                task.priority === 'P1' ? "bg-red-50 text-red-500" :
-                task.priority === 'P2' ? "bg-orange-50 text-orange-500" :
-                "bg-blue-50 text-blue-500"
-              )}>
-                {task.priority}
-              </Badge>
-              {task.labels && task.labels.length > 0 && (
+              {d.showPriority && (
+                <Badge className={cn(
+                  task.priority === 'P1' ? "bg-red-50 text-red-500" :
+                  task.priority === 'P2' ? "bg-orange-50 text-orange-500" :
+                  "bg-blue-50 text-blue-500"
+                )}>
+                  {task.priority}
+                </Badge>
+              )}
+              {d.showLabels && task.labels && task.labels.length > 0 && (
                 <div className="flex items-center gap-1">
-                  {task.labels.map(label => (
+                  {task.labels.map((label: string) => (
                     <Badge key={label} className="bg-accent/5 text-accent border border-accent/10">{label}</Badge>
                   ))}
                 </div>
               )}
-              <div className="flex items-center gap-1 text-[10px] text-gray-400 font-medium uppercase tracking-wider">
-                <Zap size={10} className={task.energy === 'High' ? "text-yellow-500" : "text-blue-400"} />
-                {task.energy} Energy
-              </div>
-              {task.deadline && (
+              {d.showEnergy && (
+                <div className="flex items-center gap-1 text-[10px] text-gray-400 font-medium uppercase tracking-wider">
+                  <Zap size={10} className={task.energy === 'High' ? "text-yellow-500" : "text-blue-400"} />
+                  {task.energy} Energy
+                </div>
+              )}
+              {d.showDeadline && task.deadline && (
                 <div className="flex items-center gap-1 text-[10px] text-gray-400 font-medium uppercase tracking-wider">
                   <Clock size={10} />
                   {format(new Date(task.deadline), 'MMM d')}
                 </div>
               )}
-              {task.attachments && task.attachments.length > 0 && (
+              {d.showAttachments && task.attachments && task.attachments.length > 0 && (
                 <div className="flex items-center gap-1 text-[10px] text-gray-400 font-medium uppercase tracking-wider">
                   <File size={10} />
                   {task.attachments.length}
@@ -2196,29 +2487,197 @@ function ProjectCard({ project, onClick, onEdit, onDelete }: { project: Project,
   );
 }
 
-function ResourceList({ resources }: { resources: Resource[] }) {
+function getYouTubeId(url: string): string | null {
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^&?\s]+)/);
+  return match ? match[1] : null;
+}
+
+function getUrlDomain(url: string): string {
+  try { return new URL(url).hostname.replace('www.', ''); } catch { return url; }
+}
+
+function ResourceList({ resources, onAdd, onDelete, onPreview }: { resources: Resource[], onAdd: (r: Resource) => void, onDelete: (id: string) => void, onPreview: (r: Resource) => void }) {
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addType, setAddType] = useState<'link' | 'file'>('link');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkTitle, setLinkTitle] = useState('');
+
+  const handleAddLink = () => {
+    if (!linkUrl.trim()) return;
+    onAdd({
+      id: crypto.randomUUID(),
+      title: linkTitle.trim() || getUrlDomain(linkUrl),
+      content: '',
+      type: 'link',
+      url: linkUrl.trim(),
+      createdAt: new Date().toISOString()
+    });
+    setLinkUrl('');
+    setLinkTitle('');
+    setShowAddForm(false);
+  };
+
+  const handleFileUpload = (file: globalThis.File) => {
+    const url = URL.createObjectURL(file);
+    onAdd({
+      id: crypto.randomUUID(),
+      title: file.name,
+      content: '',
+      type: 'file',
+      url,
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size,
+      createdAt: new Date().toISOString()
+    });
+    setShowAddForm(false);
+  };
+
+  const getResourceIcon = (res: Resource) => {
+    if (res.type === 'link') {
+      const ytId = res.url ? getYouTubeId(res.url) : null;
+      if (ytId) return <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center text-red-500"><ExternalLink size={16} /></div>;
+      return <div className="w-8 h-8 rounded-lg bg-accent/5 flex items-center justify-center text-accent"><LinkIcon size={16} /></div>;
+    }
+    if (res.type === 'file') {
+      if (res.fileType?.startsWith('image/')) return <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center text-green-500"><Image size={16} /></div>;
+      if (res.fileType === 'application/pdf') return <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center text-red-500"><FileText size={16} /></div>;
+      if (res.fileType?.includes('spreadsheet') || res.fileType?.includes('excel')) return <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center text-green-600"><FileSpreadsheet size={16} /></div>;
+      if (res.fileType?.includes('word') || res.fileType?.includes('document')) return <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-500"><FileType size={16} /></div>;
+      return <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500"><File size={16} /></div>;
+    }
+    return <div className="w-8 h-8 rounded-lg bg-accent/5 flex items-center justify-center text-accent"><FileText size={16} /></div>;
+  };
+
   return (
     <div className="space-y-3">
-      {resources.map(res => (
-        <div key={res.id} className="glass p-3 rounded-xl flex items-center gap-3 hover:bg-white transition-colors cursor-pointer">
-          <div className="w-8 h-8 rounded-lg bg-accent/5 flex items-center justify-center text-accent">
-            {res.type === 'link' ? <LinkIcon size={16} /> : <FileText size={16} />}
+      {resources.map(res => {
+        const ytId = res.type === 'link' && res.url ? getYouTubeId(res.url) : null;
+        return (
+          <div key={res.id} className="glass rounded-xl overflow-hidden group">
+            {ytId && (
+              <div className="w-full aspect-video bg-black/5">
+                <img src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`} alt="" className="w-full h-full object-cover" />
+              </div>
+            )}
+            <div className="p-3 flex items-center gap-3">
+              {getResourceIcon(res)}
+              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onPreview(res)}>
+                <h5 className="text-xs font-semibold truncate">{res.title}</h5>
+                <p className="text-[10px] text-gray-400 truncate">
+                  {res.type === 'link' ? getUrlDomain(res.url || '') : res.type === 'file' ? `${((res.fileSize || 0) / 1024).toFixed(1)} KB` : 'Note'}
+                </p>
+              </div>
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                {res.type === 'file' && res.url && (
+                  <a href={res.url} download={res.fileName} onClick={(e) => e.stopPropagation()} className="p-1.5 rounded-lg hover:bg-black/5 text-gray-500"><Download size={14} /></a>
+                )}
+                {res.type === 'link' && res.url && (
+                  <a href={res.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 rounded-lg hover:bg-black/5 text-gray-500"><ExternalLink size={14} /></a>
+                )}
+                <button onClick={() => onDelete(res.id)} className="p-1.5 rounded-lg hover:bg-black/5 text-gray-500 hover:text-red-500"><Trash2 size={14} /></button>
+              </div>
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <h5 className="text-xs font-semibold truncate">{res.title}</h5>
-            <p className="text-[10px] text-gray-400 truncate">{res.url || 'Note'}</p>
+        );
+      })}
+
+      {showAddForm ? (
+        <div className="glass p-4 rounded-xl space-y-3">
+          <div className="flex gap-2">
+            <button onClick={() => setAddType('link')} className={cn("px-3 py-1 rounded-lg text-xs font-medium transition-colors", addType === 'link' ? "bg-accent text-white" : "bg-black/5 text-gray-500")}>URL / Link</button>
+            <button onClick={() => setAddType('file')} className={cn("px-3 py-1 rounded-lg text-xs font-medium transition-colors", addType === 'file' ? "bg-accent text-white" : "bg-black/5 text-gray-500")}>File Upload</button>
           </div>
+          {addType === 'link' ? (
+            <div className="space-y-2">
+              <input type="url" placeholder="https://..." className="w-full bg-black/5 border-none rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-accent outline-none" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} autoFocus />
+              <input type="text" placeholder="Title (optional)" className="w-full bg-black/5 border-none rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-accent outline-none" value={linkTitle} onChange={(e) => setLinkTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddLink()} />
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setShowAddForm(false)} className="px-3 py-1.5 text-xs text-gray-500">Cancel</button>
+                <button onClick={handleAddLink} className="px-3 py-1.5 bg-accent text-white rounded-lg text-xs font-medium">Add Link</button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <label className="flex items-center justify-center gap-2 p-6 border border-dashed border-black/10 rounded-xl text-xs text-gray-400 hover:text-accent hover:border-accent/30 transition-all cursor-pointer">
+                <Upload size={16} />
+                Choose a file to upload
+                <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }} />
+              </label>
+              <button onClick={() => setShowAddForm(false)} className="w-full px-3 py-1.5 text-xs text-gray-500 text-center">Cancel</button>
+            </div>
+          )}
         </div>
-      ))}
-      <button className="w-full py-3 border border-dashed border-black/10 rounded-xl text-xs font-medium text-gray-400 hover:text-accent hover:border-accent/30 transition-all flex items-center justify-center gap-2">
-        <Plus size={14} />
-        Add Resource
-      </button>
+      ) : (
+        <button onClick={() => setShowAddForm(true)} className="w-full py-3 border border-dashed border-black/10 rounded-xl text-xs font-medium text-gray-400 hover:text-accent hover:border-accent/30 transition-all flex items-center justify-center gap-2">
+          <Plus size={14} />
+          Add Resource
+        </button>
+      )}
     </div>
   );
 }
 
-function EditPhaseModal({ phase, onClose, onSave }: { phase: Phase, onClose: () => void, onSave: (p: Phase) => void }) {
+function FilePreviewModal({ resource, onClose }: { resource: Resource, onClose: () => void }) {
+  const isImage = resource.fileType?.startsWith('image/');
+  const isPdf = resource.fileType === 'application/pdf';
+  const isYouTube = resource.type === 'link' && resource.url ? getYouTubeId(resource.url) : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-xl flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-black/5">
+          <h3 className="text-sm font-bold truncate">{resource.title}</h3>
+          <div className="flex items-center gap-2">
+            {resource.type === 'file' && resource.url && (
+              <a href={resource.url} download={resource.fileName} className="p-1.5 rounded-lg hover:bg-black/5 text-gray-500"><Download size={16} /></a>
+            )}
+            {resource.type === 'link' && resource.url && (
+              <a href={resource.url} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg hover:bg-black/5 text-gray-500"><ExternalLink size={16} /></a>
+            )}
+            <button onClick={onClose}><X size={20} className="text-gray-400" /></button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto p-4">
+          {isYouTube ? (
+            <div className="w-full aspect-video">
+              <iframe src={`https://www.youtube.com/embed/${isYouTube}`} className="w-full h-full rounded-xl" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+            </div>
+          ) : isImage && resource.url ? (
+            <img src={resource.url} alt={resource.title} className="max-w-full mx-auto rounded-xl" />
+          ) : isPdf && resource.url ? (
+            <iframe src={resource.url} className="w-full h-[70vh] rounded-xl" />
+          ) : resource.type === 'link' && resource.url ? (
+            <div className="text-center py-12 space-y-4">
+              <ExternalLink size={48} className="mx-auto text-gray-300" />
+              <p className="text-sm text-gray-500">{resource.url}</p>
+              <a href={resource.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-full text-sm font-medium">Open Link <ExternalLink size={14} /></a>
+            </div>
+          ) : resource.type === 'file' ? (
+            <div className="text-center py-12 space-y-4">
+              <File size={48} className="mx-auto text-gray-300" />
+              <p className="text-sm text-gray-500">{resource.fileName || resource.title}</p>
+              <p className="text-xs text-gray-400">Preview not available for this file type</p>
+              {resource.url && (
+                <a href={resource.url} download={resource.fileName} className="inline-flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-full text-sm font-medium"><Download size={14} /> Download</a>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">{resource.content}</p>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function EditPhaseModal({ phase, appSettings, onClose, onSave }: { phase: Phase, appSettings: AppSettings, onClose: () => void, onSave: (p: Phase) => void }) {
   const [edited, setEdited] = useState<Phase>({ ...phase });
   const [newLabel, setNewLabel] = useState('');
 
@@ -2272,11 +2731,9 @@ function EditPhaseModal({ phase, onClose, onSave }: { phase: Phase, onClose: () 
             <select
               className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
               value={edited.status}
-              onChange={(e) => setEdited({ ...edited, status: e.target.value as Status })}
+              onChange={(e) => setEdited({ ...edited, status: e.target.value as string })}
             >
-              <option value="Backlog">Backlog</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Done">Done</option>
+              {appSettings.phaseStatuses.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-4">
