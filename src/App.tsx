@@ -881,6 +881,7 @@ export default function App() {
                     group={inboxGroup}
                     filter={inboxFilter}
                     searchQuery={searchQuery}
+                    display={display}
                     onToggle={toggleTaskStatus}
                     onEdit={setEditingTask}
                     onDelete={deleteTask}
@@ -1042,13 +1043,19 @@ export default function App() {
                             setDraggedItemId(null);
                           }}
                           onDragEnd={() => setDraggedItemId(null)}
+                          className={cn("flex items-start gap-2 rounded-2xl transition-all", draggedItemId && draggedItemId !== project.id && "border-2 border-dashed border-transparent hover:border-accent/30")}
                         >
-                          <ProjectCard
-                            project={project}
-                            onClick={() => setActiveView({ type: 'project', id: project.id, parentId: currentArea.id })}
-                            onEdit={setEditingProject}
-                            onDelete={deleteProject}
-                          />
+                          <div className="cursor-grab text-gray-300 hover:text-gray-400 pt-6 shrink-0">
+                            <GripVertical size={16} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <ProjectCard
+                              project={project}
+                              onClick={() => setActiveView({ type: 'project', id: project.id, parentId: currentArea.id })}
+                              onEdit={setEditingProject}
+                              onDelete={deleteProject}
+                            />
+                          </div>
                         </div>
                       ))}
                       {currentArea.projects.length === 0 && (
@@ -2007,7 +2014,7 @@ function KanbanView({ data, group, filter, searchQuery, onToggle, onEdit, onDele
   );
 }
 
-function InboxView({ data, sort, group, filter, searchQuery, onToggle, onEdit, onDelete, onUpload }: { data: any, sort: string, group: string, filter: any, searchQuery?: string, onToggle: any, onEdit: any, onDelete: any, onUpload: any }) {
+function InboxView({ data, sort, group, filter, searchQuery, display, onToggle, onEdit, onDelete, onUpload }: { data: any, sort: string, group: string, filter: any, searchQuery?: string, display?: DisplaySettings, onToggle: any, onEdit: any, onDelete: any, onUpload: any }) {
   const allTasks = useMemo(() => {
     let tasks: (Task & { phaseName?: string, projectName?: string, areaName?: string, projectId?: string, phaseId?: string, areaId?: string, effectiveLabels: string[] })[] = [
       ...data.inbox.map((t: Task) => ({ ...t, effectiveLabels: t.labels || [] }))
@@ -2089,7 +2096,7 @@ function InboxView({ data, sort, group, filter, searchQuery, onToggle, onEdit, o
             <div className="h-px flex-1 bg-black/5" />
             <span className="text-xs font-medium text-gray-400">{tasks.length}</span>
           </div>
-          <TaskList tasks={tasks} onToggle={onToggle} onEdit={onEdit} onDelete={onDelete} />
+          <TaskList tasks={tasks} onToggle={onToggle} onEdit={onEdit} onDelete={onDelete} display={display} />
         </div>
       ))}
     </div>
@@ -2568,14 +2575,14 @@ function ResourceList({ resources, onAdd, onDelete, onPreview }: { resources: Re
                   {res.type === 'link' ? getUrlDomain(res.url || '') : res.type === 'file' ? `${((res.fileSize || 0) / 1024).toFixed(1)} KB` : 'Note'}
                 </p>
               </div>
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-1 shrink-0">
                 {res.type === 'file' && res.url && (
-                  <a href={res.url} download={res.fileName} onClick={(e) => e.stopPropagation()} className="p-1.5 rounded-lg hover:bg-black/5 text-gray-500"><Download size={14} /></a>
+                  <a href={res.url} download={res.fileName} onClick={(e) => e.stopPropagation()} className="p-1.5 rounded-lg hover:bg-black/5 text-gray-400 hover:text-gray-600"><Download size={14} /></a>
                 )}
                 {res.type === 'link' && res.url && (
-                  <a href={res.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 rounded-lg hover:bg-black/5 text-gray-500"><ExternalLink size={14} /></a>
+                  <a href={res.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 rounded-lg hover:bg-black/5 text-gray-400 hover:text-gray-600"><ExternalLink size={14} /></a>
                 )}
-                <button onClick={() => onDelete(res.id)} className="p-1.5 rounded-lg hover:bg-black/5 text-gray-500 hover:text-red-500"><Trash2 size={14} /></button>
+                <button onClick={() => onDelete(res.id)} className="p-1.5 rounded-lg hover:bg-black/5 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
               </div>
             </div>
           </div>
