@@ -60,6 +60,8 @@ export interface Project {
   resources: Resource[];
   labels: string[];
   attachments?: Attachment[];
+  showTimeline?: boolean;
+  showProgress?: boolean;
 }
 
 export interface AreaGroup {
@@ -72,6 +74,7 @@ export interface Area {
   title: string;
   description?: string;
   icon: string;
+  color?: string;
   tasks: Task[];
   projects: Project[];
   resources: Resource[];

@@ -612,7 +612,7 @@ export default function App() {
                     activeView.type === 'area' && activeView.id === area.id ? "bg-accent/10 text-accent" : "text-gray-600 hover:bg-black/5"
                   )}
                 >
-                  <Briefcase size={18} />
+                  {area.color ? <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: area.color }} /> : <Briefcase size={18} />}
                   {area.title}
                 </button>
               ))}
@@ -682,7 +682,7 @@ export default function App() {
           )}
 
           {data.areas.filter(a => !a.groupId).map(area => (
-            <button 
+            <button
               key={area.id}
               onClick={() => setActiveView({ type: 'area', id: area.id })}
               className={cn(
@@ -690,7 +690,7 @@ export default function App() {
                 activeView.type === 'area' && activeView.id === area.id ? "bg-accent/10 text-accent" : "text-gray-600 hover:bg-black/5"
               )}
             >
-              <Briefcase size={18} />
+              {area.color ? <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: area.color }} /> : <Briefcase size={18} />}
               {area.title}
             </button>
           ))}
@@ -973,6 +973,7 @@ export default function App() {
                     group={kanbanGroup}
                     filter={kanbanFilter}
                     searchQuery={searchQuery}
+                    display={display}
                     onToggle={toggleTaskStatus}
                     onEdit={setEditingTask}
                     onDelete={deleteTask}
@@ -1642,15 +1643,23 @@ function EditTaskModal({ task, data, appSettings, onClose, onSave, onMove }: { t
                     <File size={14} className="text-gray-400 shrink-0" />
                     <span className="truncate">{att.name}</span>
                   </div>
-                  <span className="text-[10px] text-gray-400">{(att.size / 1024).toFixed(1)} KB</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] text-gray-400">{(att.size / 1024).toFixed(1)} KB</span>
+                    <button
+                      onClick={() => setEdited({ ...edited, attachments: (edited.attachments || []).filter(a => a.id !== att.id) })}
+                      className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
                 </div>
               ))}
               <label className="flex items-center justify-center gap-2 p-3 border border-dashed border-black/10 rounded-xl text-xs text-gray-400 hover:text-accent hover:border-accent/30 transition-all cursor-pointer">
                 <Upload size={14} />
                 Upload File
-                <input 
-                  type="file" 
-                  className="hidden" 
+                <input
+                  type="file"
+                  className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
@@ -1664,7 +1673,7 @@ function EditTaskModal({ task, data, appSettings, onClose, onSave, onMove }: { t
                       };
                       setEdited({ ...edited, attachments: [...(edited.attachments || []), attachment] });
                     }
-                  }} 
+                  }}
                 />
               </label>
             </div>
@@ -1762,6 +1771,29 @@ function EditProjectModal({ project, areas, appSettings, onClose, onSave, onMove
             </div>
           </div>
           <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Card Display</label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-600">Show task progress bar</span>
+                <button
+                  onClick={() => setEdited({ ...edited, showProgress: !(edited.showProgress !== false) })}
+                  className={cn("w-9 h-5 rounded-full transition-colors flex items-center px-0.5", (edited.showProgress !== false) ? "bg-accent justify-end" : "bg-black/10 justify-start")}
+                >
+                  <div className="w-3.5 h-3.5 bg-white rounded-full shadow-sm" />
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-600">Show timeline progress bar</span>
+                <button
+                  onClick={() => setEdited({ ...edited, showTimeline: !(edited.showTimeline !== false) })}
+                  className={cn("w-9 h-5 rounded-full transition-colors flex items-center px-0.5", (edited.showTimeline !== false) ? "bg-accent justify-end" : "bg-black/10 justify-start")}
+                >
+                  <div className="w-3.5 h-3.5 bg-white rounded-full shadow-sm" />
+                </button>
+              </div>
+            </div>
+          </div>
+          <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Labels</label>
             <div className="flex flex-wrap gap-2 mb-2">
               {(edited.labels || []).map(label => (
@@ -1851,21 +1883,24 @@ function EditProjectModal({ project, areas, appSettings, onClose, onSave, onMove
   );
 }
 
-function KanbanView({ data, group, filter, searchQuery, onToggle, onEdit, onDelete, onUpload }: { data: any, group: 'status' | 'area' | 'project' | 'priority' | 'energy' | 'label', filter?: { status?: string, label?: string, priority?: string, energy?: string }, searchQuery?: string, onToggle: any, onEdit: any, onDelete: any, onUpload: any }) {
+function KanbanView({ data, group, filter, searchQuery, display, onToggle, onEdit, onDelete, onUpload }: { data: any, group: 'status' | 'area' | 'project' | 'priority' | 'energy' | 'label', filter?: { status?: string, label?: string, priority?: string, energy?: string }, searchQuery?: string, display?: DisplaySettings, onToggle: any, onEdit: any, onDelete: any, onUpload: any }) {
+  const d = display || { showPriority: true, showEnergy: true, showDeadline: true, showLabels: true, showAttachments: true, showDescription: true };
+
   const allTasks = useMemo(() => {
-    let tasks: (Task & { phaseName?: string, projectName?: string, areaName?: string, projectId?: string, phaseId?: string, areaId?: string, effectiveLabels: string[] })[] = [
+    let tasks: (Task & { phaseName?: string, projectName?: string, areaName?: string, areaColor?: string, projectId?: string, phaseId?: string, areaId?: string, effectiveLabels: string[] })[] = [
       ...data.inbox.map((t: Task) => ({ ...t, effectiveLabels: t.labels || [] }))
     ];
     data.areas.forEach((area: Area) => {
-      (area.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(area.labels || [])])) }));
+      (area.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, areaColor: area.color, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(area.labels || [])])) }));
       area.projects.forEach(project => {
-        (project.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, projectName: project.title, projectId: project.id, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(project.labels || [])])) }));
+        (project.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, areaColor: area.color, projectName: project.title, projectId: project.id, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(project.labels || [])])) }));
         project.phases.forEach(phase => {
           phase.tasks.forEach(task => {
             tasks.push({
               ...task,
               areaName: area.title,
               areaId: area.id,
+              areaColor: area.color,
               phaseName: phase.title,
               projectName: project.title,
               projectId: project.id,
@@ -1961,10 +1996,11 @@ function KanbanView({ data, group, filter, searchQuery, onToggle, onEdit, onDele
                     </div>
                   )}
                   {tasks.map(task => (
-                    <div 
-                      key={task.id} 
+                    <div
+                      key={task.id}
                       className="glass p-4 rounded-xl group hover:border-accent/30 transition-all cursor-pointer"
                       onClick={() => onEdit(task)}
+                      style={task.areaColor ? { borderLeft: `3px solid ${task.areaColor}` } : undefined}
                     >
                       <div className="flex items-start justify-between mb-2">
                         <h5 className="text-sm font-semibold leading-tight">{task.title}</h5>
@@ -1975,27 +2011,47 @@ function KanbanView({ data, group, filter, searchQuery, onToggle, onEdit, onDele
                       </div>
                       {(task.areaName || task.projectName || task.phaseName) && (
                         <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider mb-3 flex items-center gap-1">
-                          <Layers size={10} />
+                          {task.areaColor && <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: task.areaColor }} />}
+                          {!task.areaColor && <Layers size={10} />}
                           {task.areaName || 'Inbox'}
                           {task.projectName && ` > ${task.projectName}`}
                           {task.phaseName && ` > ${task.phaseName}`}
                         </div>
                       )}
+                      {d.showDescription && task.description && (
+                        <p className="text-xs text-gray-500 mb-2 line-clamp-1">{task.description}</p>
+                      )}
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Badge className={cn(
-                          task.priority === 'P1' ? "bg-red-50 text-red-500" :
-                          task.priority === 'P2' ? "bg-orange-50 text-orange-500" :
-                          "bg-blue-50 text-blue-500"
-                        )}>
-                          {task.priority}
-                        </Badge>
-                        {task.deadline && (
+                        {d.showPriority && (
+                          <Badge className={cn(
+                            task.priority === 'P1' ? "bg-red-50 text-red-500" :
+                            task.priority === 'P2' ? "bg-orange-50 text-orange-500" :
+                            "bg-blue-50 text-blue-500"
+                          )}>
+                            {task.priority}
+                          </Badge>
+                        )}
+                        {d.showLabels && task.effectiveLabels && task.effectiveLabels.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            {task.effectiveLabels.slice(0, 2).map((label: string) => (
+                              <Badge key={label} className="bg-accent/5 text-accent border border-accent/10">{label}</Badge>
+                            ))}
+                            {task.effectiveLabels.length > 2 && <span className="text-[10px] text-gray-400">+{task.effectiveLabels.length - 2}</span>}
+                          </div>
+                        )}
+                        {d.showEnergy && (
+                          <div className="flex items-center gap-1 text-[10px] text-gray-400 font-medium uppercase tracking-wider">
+                            <Zap size={10} className={task.energy === 'High' ? "text-yellow-500" : "text-blue-400"} />
+                            {task.energy}
+                          </div>
+                        )}
+                        {d.showDeadline && task.deadline && (
                           <div className="flex items-center gap-1 text-[10px] text-gray-400 font-medium uppercase tracking-wider">
                             <Clock size={10} />
                             {format(new Date(task.deadline), 'MMM d')}
                           </div>
                         )}
-                        {task.attachments && task.attachments.length > 0 && (
+                        {d.showAttachments && task.attachments && task.attachments.length > 0 && (
                           <div className="flex items-center gap-1 text-[10px] text-gray-400 font-medium uppercase tracking-wider">
                             <File size={10} />
                             {task.attachments.length}
@@ -2016,22 +2072,23 @@ function KanbanView({ data, group, filter, searchQuery, onToggle, onEdit, onDele
 
 function InboxView({ data, sort, group, filter, searchQuery, display, onToggle, onEdit, onDelete, onUpload }: { data: any, sort: string, group: string, filter: any, searchQuery?: string, display?: DisplaySettings, onToggle: any, onEdit: any, onDelete: any, onUpload: any }) {
   const allTasks = useMemo(() => {
-    let tasks: (Task & { phaseName?: string, projectName?: string, areaName?: string, projectId?: string, phaseId?: string, areaId?: string, effectiveLabels: string[] })[] = [
+    let tasks: (Task & { phaseName?: string, projectName?: string, areaName?: string, areaColor?: string, projectId?: string, phaseId?: string, areaId?: string, effectiveLabels: string[] })[] = [
       ...data.inbox.map((t: Task) => ({ ...t, effectiveLabels: t.labels || [] }))
     ];
     data.areas.forEach((area: Area) => {
-      (area.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(area.labels || [])])) }));
+      (area.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, areaColor: area.color, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(area.labels || [])])) }));
       area.projects.forEach(project => {
-        (project.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, projectName: project.title, projectId: project.id, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(project.labels || [])])) }));
+        (project.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, areaColor: area.color, projectName: project.title, projectId: project.id, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(project.labels || [])])) }));
         project.phases.forEach(phase => {
           phase.tasks.forEach(task => {
-            tasks.push({ 
-              ...task, 
+            tasks.push({
+              ...task,
               areaName: area.title,
               areaId: area.id,
-              phaseName: phase.title, 
-              projectName: project.title, 
-              projectId: project.id, 
+              areaColor: area.color,
+              phaseName: phase.title,
+              projectName: project.title,
+              projectId: project.id,
               phaseId: phase.id,
               effectiveLabels: Array.from(new Set([...(task.labels || []), ...(phase.labels || []), ...(project.labels || [])]))
             });
@@ -2323,6 +2380,7 @@ function TaskList({ tasks, onToggle, onEdit, onDelete, display, onReorder }: { t
             "group glass p-4 rounded-xl flex items-center gap-4 hover:border-accent/30 transition-all cursor-pointer",
             overIdx === idx && dragIdx !== null && dragIdx !== idx && "border-accent/50 bg-accent/5"
           )}
+          style={task.areaColor ? { borderLeft: `3px solid ${task.areaColor}` } : undefined}
           onClick={() => onEdit(task)}
         >
           {onReorder && (
@@ -2348,7 +2406,7 @@ function TaskList({ tasks, onToggle, onEdit, onDelete, display, onReorder }: { t
             </h5>
             {(task.areaName || task.projectName || task.phaseName) && (
               <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider mt-0.5 flex items-center gap-1">
-                <Layers size={10} />
+                {task.areaColor ? <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: task.areaColor }} /> : <Layers size={10} />}
                 {task.areaName || 'Inbox'}
                 {task.projectName && ` > ${task.projectName}`}
                 {task.phaseName && ` > ${task.phaseName}`}
@@ -2448,34 +2506,40 @@ function ProjectCard({ project, onClick, onEdit, onDelete }: { project: Project,
         </div>
       </div>
 
-      <div className="space-y-3">
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-            <span>Tasks</span>
-            <span>{completedTasks}/{totalTasks} ({Math.round(taskProgress)}%)</span>
-          </div>
-          <div className="h-1.5 w-full bg-black/5 rounded-full overflow-hidden">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${taskProgress}%` }}
-              className="h-full bg-accent"
-            />
-          </div>
+      {(project.showProgress !== false || project.showTimeline !== false) && (
+        <div className="space-y-3">
+          {project.showProgress !== false && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                <span>Tasks</span>
+                <span>{completedTasks}/{totalTasks} ({Math.round(taskProgress)}%)</span>
+              </div>
+              <div className="h-1.5 w-full bg-black/5 rounded-full overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${taskProgress}%` }}
+                  className="h-full bg-accent"
+                />
+              </div>
+            </div>
+          )}
+          {project.showTimeline !== false && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                <span>Timeline</span>
+                <span>{Math.round(timelineProgress)}%</span>
+              </div>
+              <div className="h-1.5 w-full bg-black/5 rounded-full overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${timelineProgress}%` }}
+                  className={cn("h-full", timelineProgress > taskProgress + 20 ? "bg-red-400" : "bg-emerald-400")}
+                />
+              </div>
+            </div>
+          )}
         </div>
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-            <span>Timeline</span>
-            <span>{Math.round(timelineProgress)}%</span>
-          </div>
-          <div className="h-1.5 w-full bg-black/5 rounded-full overflow-hidden">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${timelineProgress}%` }}
-              className={cn("h-full", timelineProgress > taskProgress + 20 ? "bg-red-400" : "bg-emerald-400")}
-            />
-          </div>
-        </div>
-      </div>
+      )}
 
       <div className="flex items-center gap-4 mt-4 text-[10px] text-gray-400 font-medium uppercase tracking-wider">
         <div className="flex items-center gap-1">
@@ -2847,7 +2911,7 @@ function EditAreaModal({ area, areaGroups, onClose, onSave, onDelete }: { area: 
           </div>
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Group</label>
-            <select 
+            <select
               className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
               value={edited.groupId || ''}
               onChange={(e) => setEdited({ ...edited, groupId: e.target.value || undefined })}
@@ -2857,6 +2921,25 @@ function EditAreaModal({ area, areaGroups, onClose, onSave, onDelete }: { area: 
                 <option key={group.id} value={group.id}>{group.title}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Color</label>
+            <div className="flex items-center gap-2">
+              {['#6366f1', '#f43f5e', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#64748b'].map(c => (
+                <button
+                  key={c}
+                  onClick={() => setEdited({ ...edited, color: c })}
+                  className={cn("w-7 h-7 rounded-full transition-all", edited.color === c ? "ring-2 ring-offset-2 ring-black/20 scale-110" : "hover:scale-110")}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+              <button
+                onClick={() => setEdited({ ...edited, color: undefined })}
+                className={cn("w-7 h-7 rounded-full bg-black/5 flex items-center justify-center text-gray-400 text-[10px] font-bold transition-all", !edited.color ? "ring-2 ring-offset-2 ring-black/20 scale-110" : "hover:scale-110")}
+              >
+                <X size={12} />
+              </button>
+            </div>
           </div>
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Labels</label>
