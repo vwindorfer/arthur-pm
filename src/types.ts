@@ -75,6 +75,7 @@ export interface Area {
   description?: string;
   icon: string;
   color?: string;
+  inactive?: boolean;
   tasks: Task[];
   projects: Project[];
   resources: Resource[];

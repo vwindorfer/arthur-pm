@@ -127,10 +127,14 @@ export default function App() {
   const [inboxSort, setInboxSort] = useState<'deadline' | 'energy' | 'priority'>('deadline');
   const [inboxGroup, setInboxGroup] = useState<'none' | 'project' | 'phase' | 'status' | 'label'>('none');
   const [inboxFilter, setInboxFilter] = useState<{ project?: string, phase?: string, status?: string, label?: string }>({});
+  const [inboxShowBacklog, setInboxShowBacklog] = useState(false);
+  const [inboxDeadlineView, setInboxDeadlineView] = useState<'all' | 'today' | 'overdue' | 'no-date'>('all');
 
   // Kanban View State
   const [kanbanGroup, setKanbanGroup] = useState<'status' | 'area' | 'project' | 'priority' | 'energy' | 'label'>('status');
   const [kanbanFilter, setKanbanFilter] = useState<{ status?: string, label?: string, priority?: string, energy?: string }>({});
+  const [kanbanShowBacklog, setKanbanShowBacklog] = useState(false);
+  const [kanbanDeadlineView, setKanbanDeadlineView] = useState<'all' | 'today' | 'overdue' | 'no-date'>('all');
 
   // Area View State
   const [areaProjectFilter, setAreaProjectFilter] = useState<string>('');
@@ -609,7 +613,8 @@ export default function App() {
                   onClick={() => setActiveView({ type: 'area', id: area.id })}
                   className={cn(
                     "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium",
-                    activeView.type === 'area' && activeView.id === area.id ? "bg-accent/10 text-accent" : "text-gray-600 hover:bg-black/5"
+                    activeView.type === 'area' && activeView.id === area.id ? "bg-accent/10 text-accent" : "text-gray-600 hover:bg-black/5",
+                    area.inactive && "opacity-40"
                   )}
                 >
                   {area.color ? <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: area.color }} /> : <Briefcase size={18} />}
@@ -687,7 +692,8 @@ export default function App() {
               onClick={() => setActiveView({ type: 'area', id: area.id })}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium",
-                activeView.type === 'area' && activeView.id === area.id ? "bg-accent/10 text-accent" : "text-gray-600 hover:bg-black/5"
+                activeView.type === 'area' && activeView.id === area.id ? "bg-accent/10 text-accent" : "text-gray-600 hover:bg-black/5",
+                area.inactive && "opacity-40"
               )}
             >
               {area.color ? <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: area.color }} /> : <Briefcase size={18} />}
@@ -815,11 +821,11 @@ export default function App() {
             >
               {activeView.type === 'inbox' && (
                 <div className="space-y-6">
-                  <div className="flex items-center gap-4 bg-white p-3 rounded-2xl border border-black/5">
+                  <div className="flex items-center gap-4 bg-white p-3 rounded-2xl border border-black/5 flex-wrap">
                     <div className="flex items-center gap-2 text-xs font-medium text-gray-400 border-r border-black/5 pr-4">
                       <ArrowUpDown size={14} />
                       Sort by:
-                      <select 
+                      <select
                         className="bg-transparent text-gray-900 focus:outline-none cursor-pointer"
                         value={inboxSort}
                         onChange={(e) => setInboxSort(e.target.value as any)}
@@ -832,7 +838,7 @@ export default function App() {
                     <div className="flex items-center gap-2 text-xs font-medium text-gray-400 border-r border-black/5 pr-4">
                       <Rows size={14} />
                       Group by:
-                      <select 
+                      <select
                         className="bg-transparent text-gray-900 focus:outline-none cursor-pointer"
                         value={inboxGroup}
                         onChange={(e) => setInboxGroup(e.target.value as any)}
@@ -843,9 +849,8 @@ export default function App() {
                         <option value="status">Status</option>
                       </select>
                     </div>
-                    <div className="flex items-center gap-2 text-xs font-medium text-gray-400">
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-400 border-r border-black/5 pr-4">
                       <Filter size={14} />
-                      Filter:
                       <select
                         className="bg-transparent text-gray-900 focus:outline-none cursor-pointer"
                         value={inboxFilter.status || ''}
@@ -854,7 +859,7 @@ export default function App() {
                         <option value="">All Status</option>
                         {appSettings.taskStatuses.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
-                      <select 
+                      <select
                         className="bg-transparent text-gray-900 focus:outline-none cursor-pointer ml-2"
                         value={inboxFilter.label || ''}
                         onChange={(e) => setInboxFilter({ ...inboxFilter, label: e.target.value || undefined })}
@@ -874,6 +879,26 @@ export default function App() {
                         ))}
                       </select>
                     </div>
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-400 border-r border-black/5 pr-4">
+                      <Calendar size={14} />
+                      <select
+                        className="bg-transparent text-gray-900 focus:outline-none cursor-pointer"
+                        value={inboxDeadlineView}
+                        onChange={(e) => setInboxDeadlineView(e.target.value as any)}
+                      >
+                        <option value="all">All Dates</option>
+                        <option value="today">Due Today</option>
+                        <option value="overdue">Overdue</option>
+                        <option value="no-date">No Deadline</option>
+                      </select>
+                    </div>
+                    <button
+                      onClick={() => setInboxShowBacklog(!inboxShowBacklog)}
+                      className={cn("flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-lg transition-colors", inboxShowBacklog ? "bg-accent/10 text-accent" : "text-gray-400 hover:bg-black/5")}
+                    >
+                      <Briefcase size={12} />
+                      Backlogged
+                    </button>
                   </div>
                   <InboxView
                     data={data}
@@ -882,6 +907,8 @@ export default function App() {
                     filter={inboxFilter}
                     searchQuery={searchQuery}
                     display={display}
+                    showBacklog={inboxShowBacklog}
+                    deadlineView={inboxDeadlineView}
                     onToggle={toggleTaskStatus}
                     onEdit={setEditingTask}
                     onDelete={deleteTask}
@@ -892,7 +919,7 @@ export default function App() {
 
               {activeView.type === 'kanban' && (
                 <div className="space-y-6">
-                  <div className="flex items-center gap-4 bg-white p-3 rounded-2xl border border-black/5 w-fit">
+                  <div className="flex items-center gap-4 bg-white p-3 rounded-2xl border border-black/5 flex-wrap">
                     <div className="flex items-center gap-2 text-xs font-medium text-gray-400 border-r border-black/5 pr-4">
                       <Rows size={14} />
                       Group by:
@@ -909,9 +936,8 @@ export default function App() {
                         <option value="label">Label</option>
                       </select>
                     </div>
-                    <div className="flex items-center gap-2 text-xs font-medium text-gray-400">
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-400 border-r border-black/5 pr-4">
                       <Filter size={14} />
-                      Filter:
                       {kanbanGroup !== 'status' && (
                         <select
                           className="bg-transparent text-gray-900 focus:outline-none cursor-pointer"
@@ -967,6 +993,26 @@ export default function App() {
                         </select>
                       )}
                     </div>
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-400 border-r border-black/5 pr-4">
+                      <Calendar size={14} />
+                      <select
+                        className="bg-transparent text-gray-900 focus:outline-none cursor-pointer"
+                        value={kanbanDeadlineView}
+                        onChange={(e) => setKanbanDeadlineView(e.target.value as any)}
+                      >
+                        <option value="all">All Dates</option>
+                        <option value="today">Due Today</option>
+                        <option value="overdue">Overdue</option>
+                        <option value="no-date">No Deadline</option>
+                      </select>
+                    </div>
+                    <button
+                      onClick={() => setKanbanShowBacklog(!kanbanShowBacklog)}
+                      className={cn("flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-lg transition-colors", kanbanShowBacklog ? "bg-accent/10 text-accent" : "text-gray-400 hover:bg-black/5")}
+                    >
+                      <Briefcase size={12} />
+                      Backlogged
+                    </button>
                   </div>
                   <KanbanView
                     data={data}
@@ -974,6 +1020,8 @@ export default function App() {
                     filter={kanbanFilter}
                     searchQuery={searchQuery}
                     display={display}
+                    showBacklog={kanbanShowBacklog}
+                    deadlineView={kanbanDeadlineView}
                     onToggle={toggleTaskStatus}
                     onEdit={setEditingTask}
                     onDelete={deleteTask}
@@ -1883,17 +1931,18 @@ function EditProjectModal({ project, areas, appSettings, onClose, onSave, onMove
   );
 }
 
-function KanbanView({ data, group, filter, searchQuery, display, onToggle, onEdit, onDelete, onUpload }: { data: any, group: 'status' | 'area' | 'project' | 'priority' | 'energy' | 'label', filter?: { status?: string, label?: string, priority?: string, energy?: string }, searchQuery?: string, display?: DisplaySettings, onToggle: any, onEdit: any, onDelete: any, onUpload: any }) {
+function KanbanView({ data, group, filter, searchQuery, display, showBacklog, deadlineView, onToggle, onEdit, onDelete, onUpload }: { data: any, group: 'status' | 'area' | 'project' | 'priority' | 'energy' | 'label', filter?: { status?: string, label?: string, priority?: string, energy?: string }, searchQuery?: string, display?: DisplaySettings, showBacklog?: boolean, deadlineView?: 'all' | 'today' | 'overdue' | 'no-date', onToggle: any, onEdit: any, onDelete: any, onUpload: any }) {
   const d = display || { showPriority: true, showEnergy: true, showDeadline: true, showLabels: true, showAttachments: true, showDescription: true };
 
   const allTasks = useMemo(() => {
-    let tasks: (Task & { phaseName?: string, projectName?: string, areaName?: string, areaColor?: string, projectId?: string, phaseId?: string, areaId?: string, effectiveLabels: string[] })[] = [
+    let tasks: (Task & { phaseName?: string, projectName?: string, areaName?: string, areaColor?: string, projectId?: string, phaseId?: string, areaId?: string, effectiveLabels: string[], projectStatus?: string })[] = [
       ...data.inbox.map((t: Task) => ({ ...t, effectiveLabels: t.labels || [] }))
     ];
     data.areas.forEach((area: Area) => {
+      if (area.inactive) return;
       (area.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, areaColor: area.color, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(area.labels || [])])) }));
       area.projects.forEach(project => {
-        (project.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, areaColor: area.color, projectName: project.title, projectId: project.id, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(project.labels || [])])) }));
+        (project.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, areaColor: area.color, projectName: project.title, projectId: project.id, projectStatus: project.status, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(project.labels || [])])) }));
         project.phases.forEach(phase => {
           phase.tasks.forEach(task => {
             tasks.push({
@@ -1904,6 +1953,7 @@ function KanbanView({ data, group, filter, searchQuery, display, onToggle, onEdi
               phaseName: phase.title,
               projectName: project.title,
               projectId: project.id,
+              projectStatus: project.status,
               phaseId: phase.id,
               effectiveLabels: Array.from(new Set([...(task.labels || []), ...(phase.labels || []), ...(project.labels || [])]))
             });
@@ -1911,6 +1961,9 @@ function KanbanView({ data, group, filter, searchQuery, display, onToggle, onEdi
         });
       });
     });
+
+    // Filter out tasks from backlogged projects unless showBacklog is on
+    if (!showBacklog) tasks = tasks.filter(t => !t.projectStatus || t.projectStatus !== 'Backlog');
 
     if (!filter?.status) tasks = tasks.filter(t => t.status !== 'Done');
     else tasks = tasks.filter(t => t.status === filter.status);
@@ -1920,8 +1973,16 @@ function KanbanView({ data, group, filter, searchQuery, display, onToggle, onEdi
 
     if (searchQuery) tasks = tasks.filter(t => taskMatchesSearch(t, searchQuery));
 
+    // Deadline view filter
+    if (deadlineView && deadlineView !== 'all') {
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (deadlineView === 'today') tasks = tasks.filter(t => t.deadline && t.deadline.split('T')[0] === todayStr);
+      else if (deadlineView === 'overdue') tasks = tasks.filter(t => t.deadline && t.deadline.split('T')[0] < todayStr);
+      else if (deadlineView === 'no-date') tasks = tasks.filter(t => !t.deadline);
+    }
+
     return tasks;
-  }, [data, filter, searchQuery]);
+  }, [data, filter, searchQuery, showBacklog, deadlineView]);
 
   const columns = useMemo(() => {
     if (group === 'status') return ['Backlog', 'In Progress', 'Done'];
@@ -2070,15 +2131,16 @@ function KanbanView({ data, group, filter, searchQuery, display, onToggle, onEdi
   );
 }
 
-function InboxView({ data, sort, group, filter, searchQuery, display, onToggle, onEdit, onDelete, onUpload }: { data: any, sort: string, group: string, filter: any, searchQuery?: string, display?: DisplaySettings, onToggle: any, onEdit: any, onDelete: any, onUpload: any }) {
+function InboxView({ data, sort, group, filter, searchQuery, display, showBacklog, deadlineView, onToggle, onEdit, onDelete, onUpload }: { data: any, sort: string, group: string, filter: any, searchQuery?: string, display?: DisplaySettings, showBacklog?: boolean, deadlineView?: 'all' | 'today' | 'overdue' | 'no-date', onToggle: any, onEdit: any, onDelete: any, onUpload: any }) {
   const allTasks = useMemo(() => {
-    let tasks: (Task & { phaseName?: string, projectName?: string, areaName?: string, areaColor?: string, projectId?: string, phaseId?: string, areaId?: string, effectiveLabels: string[] })[] = [
+    let tasks: (Task & { phaseName?: string, projectName?: string, areaName?: string, areaColor?: string, projectId?: string, phaseId?: string, areaId?: string, effectiveLabels: string[], projectStatus?: string })[] = [
       ...data.inbox.map((t: Task) => ({ ...t, effectiveLabels: t.labels || [] }))
     ];
     data.areas.forEach((area: Area) => {
+      if (area.inactive) return;
       (area.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, areaColor: area.color, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(area.labels || [])])) }));
       area.projects.forEach(project => {
-        (project.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, areaColor: area.color, projectName: project.title, projectId: project.id, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(project.labels || [])])) }));
+        (project.tasks || []).forEach(t => tasks.push({ ...t, areaName: area.title, areaId: area.id, areaColor: area.color, projectName: project.title, projectId: project.id, projectStatus: project.status, effectiveLabels: Array.from(new Set([...(t.labels || []), ...(project.labels || [])])) }));
         project.phases.forEach(phase => {
           phase.tasks.forEach(task => {
             tasks.push({
@@ -2089,6 +2151,7 @@ function InboxView({ data, sort, group, filter, searchQuery, display, onToggle, 
               phaseName: phase.title,
               projectName: project.title,
               projectId: project.id,
+              projectStatus: project.status,
               phaseId: phase.id,
               effectiveLabels: Array.from(new Set([...(task.labels || []), ...(phase.labels || []), ...(project.labels || [])]))
             });
@@ -2097,6 +2160,9 @@ function InboxView({ data, sort, group, filter, searchQuery, display, onToggle, 
       });
     });
 
+    // Filter out tasks from backlogged projects unless showBacklog is on
+    if (!showBacklog) tasks = tasks.filter(t => !t.projectStatus || t.projectStatus !== 'Backlog');
+
     // Filter out Done tasks unless explicitly filtered
     if (!filter.status) tasks = tasks.filter(t => t.status !== 'Done');
     else tasks = tasks.filter(t => t.status === filter.status);
@@ -2104,6 +2170,14 @@ function InboxView({ data, sort, group, filter, searchQuery, display, onToggle, 
     if (filter.label) tasks = tasks.filter(t => t.effectiveLabels.includes(filter.label));
 
     if (searchQuery) tasks = tasks.filter(t => taskMatchesSearch(t, searchQuery));
+
+    // Deadline view filter
+    if (deadlineView && deadlineView !== 'all') {
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (deadlineView === 'today') tasks = tasks.filter(t => t.deadline && t.deadline.split('T')[0] === todayStr);
+      else if (deadlineView === 'overdue') tasks = tasks.filter(t => t.deadline && t.deadline.split('T')[0] < todayStr);
+      else if (deadlineView === 'no-date') tasks = tasks.filter(t => !t.deadline);
+    }
 
     // Sort
     tasks.sort((a, b) => {
@@ -2124,7 +2198,7 @@ function InboxView({ data, sort, group, filter, searchQuery, display, onToggle, 
     });
 
     return tasks;
-  }, [data, sort, filter, searchQuery]);
+  }, [data, sort, filter, searchQuery, showBacklog, deadlineView]);
 
   const groupedTasks = useMemo(() => {
     if (group === 'none') return { 'All Tasks': allTasks };
@@ -2940,6 +3014,18 @@ function EditAreaModal({ area, areaGroups, onClose, onSave, onDelete }: { area: 
                 <X size={12} />
               </button>
             </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">Active</label>
+              <p className="text-[10px] text-gray-400 mt-0.5">Inactive areas are hidden from Global Inbox and Kanban Board</p>
+            </div>
+            <button
+              onClick={() => setEdited({ ...edited, inactive: !edited.inactive })}
+              className={cn("w-10 h-6 rounded-full transition-colors flex items-center px-1", !edited.inactive ? "bg-accent justify-end" : "bg-black/10 justify-start")}
+            >
+              <div className="w-4 h-4 bg-white rounded-full shadow-sm" />
+            </button>
           </div>
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Labels</label>
