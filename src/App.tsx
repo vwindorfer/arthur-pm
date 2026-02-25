@@ -663,13 +663,13 @@ export default function App() {
                   key={area.id}
                   onClick={() => setActiveView({ type: 'area', id: area.id })}
                   className={cn(
-                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium",
+                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium text-left",
                     activeView.type === 'area' && activeView.id === area.id ? "bg-accent/10 text-accent" : "text-gray-600 hover:bg-black/5",
                     area.inactive && "opacity-40"
                   )}
                 >
-                  {area.color ? <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: area.color }} /> : <Briefcase size={18} />}
-                  {area.title}
+                  <span className="shrink-0">{area.color ? <div className="w-4 h-4 rounded-full" style={{ backgroundColor: area.color }} /> : <Briefcase size={18} />}</span>
+                  <span className="min-w-0">{area.title}</span>
                 </button>
               ))}
               {isAddingArea && isAddingArea.groupId === group.id && (
@@ -742,13 +742,13 @@ export default function App() {
               key={area.id}
               onClick={() => setActiveView({ type: 'area', id: area.id })}
               className={cn(
-                "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium",
+                "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium text-left",
                 activeView.type === 'area' && activeView.id === area.id ? "bg-accent/10 text-accent" : "text-gray-600 hover:bg-black/5",
                 area.inactive && "opacity-40"
               )}
             >
-              {area.color ? <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: area.color }} /> : <Briefcase size={18} />}
-              {area.title}
+              <span className="shrink-0">{area.color ? <div className="w-4 h-4 rounded-full" style={{ backgroundColor: area.color }} /> : <Briefcase size={18} />}</span>
+              <span className="min-w-0">{area.title}</span>
             </button>
           ))}
         </nav>
