@@ -2308,10 +2308,14 @@ function KanbanView({ data, group, filter, searchQuery, display, showBacklog, de
                       key={task.id}
                       className="glass p-4 rounded-xl group hover:border-accent/30 transition-all cursor-pointer"
                       onClick={() => onEdit(task)}
-                      style={task.areaColor ? { borderLeft: `5px solid ${task.areaColor}`, backgroundColor: `${task.areaColor}10` } : undefined}
                     >
                       <div className="flex items-start justify-between mb-2">
-                        <h5 className="text-sm font-semibold leading-tight">{task.title}</h5>
+                        <div className="flex items-center gap-2">
+                          {task.areaColor && (
+                            <div className="w-4 h-4 rounded-full shrink-0 shadow-sm mt-0.5" style={{ backgroundColor: task.areaColor }} />
+                          )}
+                          <h5 className="text-sm font-semibold leading-tight">{task.title}</h5>
+                        </div>
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <IconButton icon={Edit2} className="p-1" onClick={(e) => { e.stopPropagation(); onEdit(task); }} />
                           <IconButton icon={Trash2} className="p-1 hover:text-red-500" onClick={(e) => { e.stopPropagation(); onDelete(task.id); }} />
@@ -2545,6 +2549,8 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
   const [filterArea, setFilterArea] = useState('');
   const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
   const [filterStatus, setFilterStatus] = useState('');
+  const [showBacklogged, setShowBacklogged] = useState(false);
+  const [showInactive, setShowInactive] = useState(false);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphLinks, setGraphLinks] = useState<GraphLink[]>([]);
@@ -2651,10 +2657,24 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
 
   // Filter
   const { filteredNodes, filteredLinks } = useMemo(() => {
+    // Collect hidden project/area IDs for filtering their children
+    const hiddenProjectIds = new Set<string>();
+    const hiddenAreaIds = new Set<string>();
+    if (!showBacklogged) {
+      rawNodes.forEach(n => { if (n.nodeType === 'project' && n.status === 'Backlog') hiddenProjectIds.add(n.nodeId); });
+    }
+    if (!showInactive) {
+      rawNodes.forEach(n => { if (n.nodeType === 'area' && n.status === 'Inactive') hiddenAreaIds.add(n.nodeId); });
+    }
+
     const fn = rawNodes.filter(n => {
       if (hiddenTypes.has(n.nodeType)) return false;
       if (filterArea && n.areaId && n.areaId !== filterArea) return false;
       if (filterStatus && n.status && n.status !== filterStatus) return false;
+      if (!showBacklogged && n.nodeType === 'project' && n.status === 'Backlog') return false;
+      if (!showInactive && n.nodeType === 'area' && n.status === 'Inactive') return false;
+      if (n.areaId && hiddenAreaIds.has(n.areaId)) return false;
+      if (n.projectId && hiddenProjectIds.has(n.projectId)) return false;
       if (searchQuery && searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
         if (!n.label.toLowerCase().includes(q)) return false;
@@ -2664,7 +2684,7 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
     const fnIds = new Set(fn.map(n => n.id));
     const fl = rawLinks.filter(l => fnIds.has(l.source as string) && fnIds.has(l.target as string));
     return { filteredNodes: fn, filteredLinks: fl };
-  }, [rawNodes, rawLinks, hiddenTypes, filterArea, filterStatus, searchQuery]);
+  }, [rawNodes, rawLinks, hiddenTypes, filterArea, filterStatus, searchQuery, showBacklogged, showInactive]);
 
   // Run force simulation
   React.useEffect(() => {
@@ -2901,6 +2921,23 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
           <option value="In Progress">In Progress</option>
           <option value="Done">Done</option>
         </select>
+        <div className="h-4 w-px bg-black/10" />
+        <button
+          onClick={() => setShowBacklogged(prev => !prev)}
+          className={cn("text-[10px] px-2.5 py-1 rounded-full border font-medium transition-colors",
+            showBacklogged ? "border-amber-300 text-amber-700 bg-amber-50" : "border-transparent bg-black/5 text-gray-400"
+          )}
+        >
+          Backlogged
+        </button>
+        <button
+          onClick={() => setShowInactive(prev => !prev)}
+          className={cn("text-[10px] px-2.5 py-1 rounded-full border font-medium transition-colors",
+            showInactive ? "border-gray-400 text-gray-700 bg-gray-100" : "border-transparent bg-black/5 text-gray-400"
+          )}
+        >
+          Inactive
+        </button>
         {/* Legend */}
         <div className="flex items-center gap-2 ml-auto text-[10px] text-gray-400">
           <span className="flex items-center gap-1"><span className="w-5 h-0.5 bg-gray-300 inline-block" /> Hierarchy</span>
@@ -3256,13 +3293,15 @@ function TaskList({ tasks, onToggle, onEdit, onDelete, display, onReorder }: { t
             "group glass p-4 rounded-xl flex items-center gap-4 hover:border-accent/30 transition-all cursor-pointer",
             overIdx === idx && dragIdx !== null && dragIdx !== idx && "border-accent/50 bg-accent/5"
           )}
-          style={task.areaColor ? { borderLeft: `5px solid ${task.areaColor}`, backgroundColor: `${task.areaColor}10` } : undefined}
           onClick={() => onEdit(task)}
         >
           {onReorder && (
             <div className="cursor-grab text-gray-300 hover:text-gray-400 shrink-0" onMouseDown={(e) => e.stopPropagation()}>
               <GripVertical size={16} />
             </div>
+          )}
+          {task.areaColor && (
+            <div className="w-5 h-5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: task.areaColor }} />
           )}
           <button
             onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}
@@ -3903,6 +3942,26 @@ function EditAreaModal({ area, areaGroups, onClose, onSave, onDelete }: { area: 
               >
                 <X size={12} />
               </button>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-[10px] text-gray-400">Hex:</span>
+              <input
+                type="text"
+                className="w-28 bg-black/5 border-none rounded-lg px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-accent outline-none"
+                placeholder="#000000"
+                value={edited.color || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '' || val === '#') {
+                    setEdited({ ...edited, color: val || undefined });
+                  } else if (/^#[0-9A-Fa-f]{0,6}$/.test(val)) {
+                    setEdited({ ...edited, color: val });
+                  }
+                }}
+              />
+              {edited.color && /^#[0-9A-Fa-f]{6}$/.test(edited.color) && (
+                <div className="w-6 h-6 rounded-full border border-black/10" style={{ backgroundColor: edited.color }} />
+              )}
             </div>
           </div>
           <div className="flex items-center justify-between">
