@@ -532,6 +532,20 @@ export default function App() {
     updateData(newData);
   };
 
+  const reorderResources = (targetType: 'area' | 'project', targetId: string, fromIndex: number, toIndex: number) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    if (targetType === 'area') {
+      const area = newData.areas.find((a: any) => a.id === targetId);
+      if (area) area.resources = handleReorder(area.resources, fromIndex, toIndex);
+    } else {
+      newData.areas.forEach((a: any) => {
+        const p = a.projects.find((p: any) => p.id === targetId);
+        if (p) p.resources = handleReorder(p.resources, fromIndex, toIndex);
+      });
+    }
+    updateData(newData);
+  };
+
   const moveTaskToPhase = (taskId: string, projectId: string, targetPhaseId: string | null) => {
     const newData = JSON.parse(JSON.stringify(data));
     newData.areas.forEach((a: any) => {
@@ -1266,6 +1280,7 @@ export default function App() {
                       onAdd={(r) => handleAddResource(r, 'area', currentArea.id)}
                       onDelete={(id) => handleDeleteResource(id, 'area', currentArea.id)}
                       onPreview={setPreviewResource}
+                      onReorder={(from, to) => reorderResources('area', currentArea.id, from, to)}
                     />
                   </div>
                 </div>
@@ -1561,6 +1576,7 @@ export default function App() {
                           onAdd={(r) => handleAddResource(r, 'project', currentProject.id)}
                           onDelete={(id) => handleDeleteResource(id, 'project', currentProject.id)}
                           onPreview={setPreviewResource}
+                          onReorder={(from, to) => reorderResources('project', currentProject.id, from, to)}
                         />
                       </div>
                     </div>
@@ -3715,11 +3731,13 @@ function DependencySelector({ label, items, selected, onChange }: { label: strin
   );
 }
 
-function ResourceList({ resources, onAdd, onDelete, onPreview }: { resources: Resource[], onAdd: (r: Resource) => void, onDelete: (id: string) => void, onPreview: (r: Resource) => void }) {
+function ResourceList({ resources, onAdd, onDelete, onPreview, onReorder }: { resources: Resource[], onAdd: (r: Resource) => void, onDelete: (id: string) => void, onPreview: (r: Resource) => void, onReorder?: (fromIndex: number, toIndex: number) => void }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [addType, setAddType] = useState<'link' | 'file'>('link');
   const [linkUrl, setLinkUrl] = useState('');
   const [linkTitle, setLinkTitle] = useState('');
+  const [resDragIdx, setResDragIdx] = useState<number | null>(null);
+  const [resOverIdx, setResOverIdx] = useState<number | null>(null);
 
   const handleAddLink = () => {
     if (!linkUrl.trim()) return;
@@ -3770,10 +3788,18 @@ function ResourceList({ resources, onAdd, onDelete, onPreview }: { resources: Re
 
   return (
     <div className="space-y-3">
-      {resources.map(res => {
+      {resources.map((res, idx) => {
         const ytId = res.type === 'link' && res.url ? getYouTubeId(res.url) : null;
         return (
-          <div key={res.id} className="glass rounded-xl overflow-hidden group">
+          <div
+            key={res.id}
+            className={cn("glass rounded-xl overflow-hidden group", resOverIdx === idx && resDragIdx !== null && resDragIdx !== idx && "border-accent/50")}
+            draggable={!!onReorder}
+            onDragStart={(e) => { setResDragIdx(idx); e.dataTransfer.effectAllowed = 'move'; }}
+            onDragOver={(e) => { e.preventDefault(); setResOverIdx(idx); }}
+            onDrop={(e) => { e.preventDefault(); if (resDragIdx !== null && resDragIdx !== idx && onReorder) onReorder(resDragIdx, idx); setResDragIdx(null); setResOverIdx(null); }}
+            onDragEnd={() => { setResDragIdx(null); setResOverIdx(null); }}
+          >
             {ytId && (
               <div className="w-full aspect-video bg-black/5">
                 <img src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`} alt="" className="w-full h-full object-cover" />
