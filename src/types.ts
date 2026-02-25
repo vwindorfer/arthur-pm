@@ -33,6 +33,7 @@ export interface Task {
   deadline?: string;
   labels: string[];
   attachments?: Attachment[];
+  dependsOn?: string[];
   createdAt: string;
 }
 
@@ -46,6 +47,17 @@ export interface Phase {
   tasks: Task[];
   labels: string[];
   attachments?: Attachment[];
+  dependsOn?: string[];
+}
+
+export interface ProjectEvent {
+  id: string;
+  title: string;
+  description?: string;
+  date: string;
+  time?: string;
+  linkedPhaseIds?: string[];
+  linkedTaskIds?: string[];
 }
 
 export interface Project {
@@ -60,8 +72,10 @@ export interface Project {
   resources: Resource[];
   labels: string[];
   attachments?: Attachment[];
+  dependsOn?: string[];
   showTimeline?: boolean;
   showProgress?: boolean;
+  events?: ProjectEvent[];
 }
 
 export interface AreaGroup {

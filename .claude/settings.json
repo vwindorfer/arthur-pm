@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Read(//Users/valentin.windorfer/Library/CloudStorage/GoogleDrive-valentin.windorfer@live.de/Meine Ablage/**)"
+      "Read(//Users/valentin.windorfer/Library/CloudStorage/GoogleDrive-valentin.windorfer@live.de/Meine Ablage/**)",
+      "Bash(wc -l \"/Users/valentin.windorfer/Library/CloudStorage/GoogleDrive-valentin.windorfer@live.de/Meine Ablage/[04] Projects/\\(01\\) Software Development/arthuros/src/App.tsx\")",
+      "Bash(npx tsc --noEmit)",
+      "WebFetch(domain:deepwiki.com)"
     ]
   }
 }

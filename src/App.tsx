@@ -48,7 +48,8 @@ import {
   FileSpreadsheet,
   FileType,
   Download,
-  ChevronUp
+  ChevronUp,
+  Network
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -56,8 +57,9 @@ import { twMerge } from 'tailwind-merge';
 import { useLifeOS } from './hooks/useLifeOS';
 import { useAuth } from './contexts/AuthContext';
 import AuthPage from './components/AuthPage';
-import { Area, Project, Phase, Task, Priority, Energy, Resource, Attachment, LifeOSData, AreaGroup, AppSettings, DisplaySettings } from './types';
+import { Area, Project, Phase, Task, Priority, Energy, Resource, Attachment, LifeOSData, AreaGroup, AppSettings, DisplaySettings, ProjectEvent } from './types';
 import { format } from 'date-fns';
+import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide, forceX, forceY, type SimulationNodeDatum, type SimulationLinkDatum } from 'd3-force';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -102,7 +104,7 @@ export default function App() {
   const { data, updateData, addArea, deleteTask, deleteProject, deleteArea, deleteGroup, deletePhase, syncing, lastSyncError } = useLifeOS();
 
   const [activeView, setActiveView] = useState<{
-    type: 'inbox' | 'area' | 'project' | 'phase' | 'kanban' | 'settings' | 'completed';
+    type: 'inbox' | 'area' | 'project' | 'phase' | 'kanban' | 'settings' | 'completed' | 'graph';
     id?: string;
     parentId?: string;
     grandParentId?: string;
@@ -142,6 +144,9 @@ export default function App() {
   // Resource/File preview modal
   const [previewResource, setPreviewResource] = useState<Resource | null>(null);
   const [addingResourceTo, setAddingResourceTo] = useState<{ type: 'area' | 'project', id: string } | null>(null);
+
+  // Event editing state
+  const [editingEvent, setEditingEvent] = useState<{ projectId: string, event: ProjectEvent | null } | null>(null);
 
   // Drag reorder state
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
@@ -202,7 +207,7 @@ export default function App() {
   , [activeView, currentProject]);
 
   // Handlers
-  const handleAddTask = (title: string, target: 'inbox' | 'area' | 'project' | 'phase', id?: string) => {
+  const handleAddTask = (title: string, target: 'inbox' | 'area' | 'project' | 'phase', id?: string, labels?: string[]) => {
     const newTask: Task = {
       id: generateId(),
       title: title || 'New Task',
@@ -211,7 +216,7 @@ export default function App() {
       priority: 'P2',
       contextTags: [],
       energy: 'Low',
-      labels: [],
+      labels: labels || [],
       createdAt: new Date().toISOString()
     };
 
@@ -527,6 +532,41 @@ export default function App() {
     updateData(newData);
   };
 
+  // Event handlers
+  const handleAddEvent = (projectId: string, event: ProjectEvent) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    newData.areas.forEach((area: any) => {
+      const project = area.projects.find((p: any) => p.id === projectId);
+      if (project) {
+        project.events = [...(project.events || []), event];
+      }
+    });
+    updateData(newData);
+  };
+
+  const handleUpdateEvent = (projectId: string, updatedEvent: ProjectEvent) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    newData.areas.forEach((area: any) => {
+      const project = area.projects.find((p: any) => p.id === projectId);
+      if (project && project.events) {
+        const idx = project.events.findIndex((e: any) => e.id === updatedEvent.id);
+        if (idx !== -1) project.events[idx] = updatedEvent;
+      }
+    });
+    updateData(newData);
+  };
+
+  const handleDeleteEvent = (projectId: string, eventId: string) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    newData.areas.forEach((area: any) => {
+      const project = area.projects.find((p: any) => p.id === projectId);
+      if (project && project.events) {
+        project.events = project.events.filter((e: any) => e.id !== eventId);
+      }
+    });
+    updateData(newData);
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#F5F5F7] flex items-center justify-center">
@@ -585,6 +625,17 @@ export default function App() {
           >
             <CheckCircle2 size={18} />
             Completed
+          </button>
+
+          <button
+            onClick={() => setActiveView({ type: 'graph' })}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium",
+              activeView.type === 'graph' ? "bg-accent/10 text-accent" : "text-gray-600 hover:bg-black/5"
+            )}
+          >
+            <Network size={18} />
+            Knowledge Graph
           </button>
 
           {/* Area Groups and Areas */}
@@ -763,6 +814,7 @@ export default function App() {
                   {activeView.type === 'area' && currentArea?.title}
                   {activeView.type === 'project' && currentProject?.title}
                   {activeView.type === 'phase' && currentPhase?.title}
+                  {activeView.type === 'graph' && "Knowledge Graph"}
                 </h2>
                 {activeView.type === 'area' && currentArea && (
                   <IconButton icon={Edit2} onClick={() => setEditingArea(currentArea)} />
@@ -1044,6 +1096,14 @@ export default function App() {
                 />
               )}
 
+              {activeView.type === 'graph' && (
+                <GraphView
+                  data={data}
+                  searchQuery={searchQuery}
+                  onNavigate={setActiveView}
+                />
+              )}
+
               {activeView.type === 'area' && currentArea && (() => {
                 const filteredProjects = currentArea.projects.filter(p => (!areaProjectFilter || p.status === areaProjectFilter) && (!searchQuery || matchesSearch(p.title, searchQuery) || matchesSearch(p.description, searchQuery) || p.labels.some(l => matchesSearch(l, searchQuery))));
                 return (
@@ -1157,6 +1217,9 @@ export default function App() {
 
               {activeView.type === 'project' && currentProject && (
                 <div className="space-y-8">
+                  {currentProject.description && (
+                    <p className="text-sm text-gray-500 -mt-4 max-w-2xl leading-relaxed">{currentProject.description}</p>
+                  )}
                   <div className="glass p-6 rounded-2xl flex items-center justify-between">
                     <div className="flex items-center gap-6">
                       <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -1287,17 +1350,108 @@ export default function App() {
                         </div>
                       )}
                     </div>
-                    <div className="space-y-6">
-                      <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <FileText size={20} className="text-accent" />
-                        Project Resources
-                      </h3>
-                      <ResourceList
-                        resources={currentProject.resources}
-                        onAdd={(r) => handleAddResource(r, 'project', currentProject.id)}
-                        onDelete={(id) => handleDeleteResource(id, 'project', currentProject.id)}
-                        onPreview={setPreviewResource}
-                      />
+                    <div className="space-y-8">
+                      {/* Project Events */}
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-lg font-semibold flex items-center gap-2">
+                            <Calendar size={20} className="text-accent" />
+                            Project Events
+                          </h3>
+                          <button
+                            onClick={() => setEditingEvent({ projectId: currentProject.id, event: null })}
+                            className="text-accent hover:text-accent/80 text-xs font-medium flex items-center gap-1"
+                          >
+                            <Plus size={14} />
+                            Add Event
+                          </button>
+                        </div>
+                        {(currentProject.events || []).length === 0 && !editingEvent && (
+                          <div className="p-6 glass rounded-2xl flex flex-col items-center justify-center text-gray-400 border-dashed">
+                            <Calendar size={24} className="mb-2 opacity-20" />
+                            <p className="text-xs">No events yet</p>
+                          </div>
+                        )}
+                        {(currentProject.events || []).sort((a, b) => {
+                          const dateA = a.time ? `${a.date}T${a.time}` : a.date;
+                          const dateB = b.time ? `${b.date}T${b.time}` : b.date;
+                          return dateA.localeCompare(dateB);
+                        }).map(event => {
+                          const eventDate = event.time ? new Date(`${event.date}T${event.time}`) : new Date(event.date + 'T23:59:59');
+                          const now = new Date();
+                          const diffMs = eventDate.getTime() - now.getTime();
+                          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                          const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                          const isPast = diffMs < 0;
+                          const linkedPhases = currentProject.phases.filter(ph => event.linkedPhaseIds?.includes(ph.id));
+                          const allTasks = [...currentProject.tasks, ...currentProject.phases.flatMap(ph => ph.tasks)];
+                          const linkedTasks = allTasks.filter(t => event.linkedTaskIds?.includes(t.id));
+
+                          return (
+                            <div key={event.id} className="glass p-4 rounded-xl space-y-2">
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="font-medium text-sm text-gray-900">{event.title}</h4>
+                                    <span className={cn(
+                                      "text-[10px] font-bold px-2 py-0.5 rounded-full",
+                                      isPast ? "bg-red-50 text-red-500" :
+                                      diffDays === 0 ? "bg-amber-50 text-amber-600" :
+                                      diffDays <= 3 ? "bg-orange-50 text-orange-500" :
+                                      "bg-accent/10 text-accent"
+                                    )}>
+                                      {isPast ? 'Past' :
+                                       diffDays === 0 ? (event.time ? `${diffHours}h left` : 'Today') :
+                                       diffDays === 1 ? '1 day left' :
+                                       `${diffDays} days left`}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
+                                    <Calendar size={10} />
+                                    {format(new Date(event.date), 'MMM d, yyyy')}
+                                    {event.time && <span>at {event.time}</span>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <IconButton icon={Edit2} onClick={() => setEditingEvent({ projectId: currentProject.id, event })} />
+                                  <IconButton icon={Trash2} className="hover:text-red-500" onClick={() => handleDeleteEvent(currentProject.id, event.id)} />
+                                </div>
+                              </div>
+                              {event.description && (
+                                <p className="text-xs text-gray-500">{event.description}</p>
+                              )}
+                              {(linkedPhases.length > 0 || linkedTasks.length > 0) && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {linkedPhases.map(ph => (
+                                    <span key={ph.id} className="text-[10px] bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">
+                                      <Layers size={8} className="inline mr-1" />{ph.title}
+                                    </span>
+                                  ))}
+                                  {linkedTasks.map(t => (
+                                    <span key={t.id} className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">
+                                      <CheckCircle2 size={8} className="inline mr-1" />{t.title}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Project Resources */}
+                      <div className="space-y-4">
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                          <FileText size={20} className="text-accent" />
+                          Project Resources
+                        </h3>
+                        <ResourceList
+                          resources={currentProject.resources}
+                          onAdd={(r) => handleAddResource(r, 'project', currentProject.id)}
+                          onDelete={(id) => handleDeleteResource(id, 'project', currentProject.id)}
+                          onPreview={setPreviewResource}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1316,7 +1470,7 @@ export default function App() {
             data={data}
             initialTarget={{ type: isAddingTask.target, id: isAddingTask.id }}
             onClose={() => setIsAddingTask(null)}
-            onConfirm={(val, type, id) => handleAddTask(val, type || isAddingTask.target, id || isAddingTask.id)}
+            onConfirm={(val, type, id, labels) => handleAddTask(val, type || isAddingTask.target, id || isAddingTask.id, labels)}
           />
         )}
         {isAddingProject && (
@@ -1359,6 +1513,7 @@ export default function App() {
           <EditPhaseModal
             phase={editingPhase}
             appSettings={appSettings}
+            allPhases={data.areas.flatMap(a => a.projects.flatMap(p => p.phases))}
             onClose={() => setEditingPhase(null)}
             onSave={updatePhase}
           />
@@ -1378,6 +1533,21 @@ export default function App() {
             onClose={() => setPreviewResource(null)}
           />
         )}
+        {editingEvent && currentProject && (
+          <EditEventModal
+            event={editingEvent.event}
+            project={currentProject}
+            onClose={() => setEditingEvent(null)}
+            onSave={(event) => {
+              if (editingEvent.event) {
+                handleUpdateEvent(editingEvent.projectId, event);
+              } else {
+                handleAddEvent(editingEvent.projectId, event);
+              }
+              setEditingEvent(null);
+            }}
+          />
+        )}
       </AnimatePresence>
     </div>
   );
@@ -1385,9 +1555,11 @@ export default function App() {
 
 // --- Sub-components ---
 
-function CreationModal({ title, placeholder, onClose, onConfirm, data, initialTarget }: { title: string, placeholder: string, onClose: () => void, onConfirm: (val: string, targetType?: 'inbox' | 'area' | 'project' | 'phase', targetId?: string) => void, data?: LifeOSData, initialTarget?: { type: 'inbox' | 'area' | 'project' | 'phase', id?: string } }) {
+function CreationModal({ title, placeholder, onClose, onConfirm, data, initialTarget }: { title: string, placeholder: string, onClose: () => void, onConfirm: (val: string, targetType?: 'inbox' | 'area' | 'project' | 'phase', targetId?: string, labels?: string[]) => void, data?: LifeOSData, initialTarget?: { type: 'inbox' | 'area' | 'project' | 'phase', id?: string } }) {
   const [val, setVal] = useState('');
   const [target, setTarget] = useState<{ type: 'inbox' | 'area' | 'project' | 'phase', id?: string }>(initialTarget || { type: 'inbox' });
+  const [labels, setLabels] = useState<string[]>([]);
+  const [newLabel, setNewLabel] = useState('');
 
   const isTask = title === "Create New Task";
 
@@ -1407,7 +1579,7 @@ function CreationModal({ title, placeholder, onClose, onConfirm, data, initialTa
           className="w-full bg-black/5 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent outline-none mb-4"
           value={val}
           onChange={(e) => setVal(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && onConfirm(val, target.type, target.id)}
+          onKeyDown={(e) => e.key === 'Enter' && onConfirm(val, target.type, target.id, labels)}
         />
 
         {isTask && data && (
@@ -1448,9 +1620,42 @@ function CreationModal({ title, placeholder, onClose, onConfirm, data, initialTa
           </div>
         )}
 
+        {isTask && (
+          <div className="mb-4">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Labels</label>
+            {labels.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {labels.map(l => (
+                  <span key={l} className="px-2 py-0.5 bg-accent/10 text-accent rounded-full text-xs flex items-center gap-1">
+                    {l}
+                    <button onClick={() => setLabels(labels.filter(x => x !== l))} className="hover:text-red-500"><X size={10} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <input
+              type="text"
+              placeholder="Add label and press Enter..."
+              className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (newLabel.trim() && !labels.includes(newLabel.trim())) {
+                    setLabels([...labels, newLabel.trim()]);
+                    setNewLabel('');
+                  }
+                }
+              }}
+            />
+          </div>
+        )}
+
         <div className="flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">Cancel</button>
-          <button onClick={() => onConfirm(val, target.type, target.id)} className="px-6 py-2 bg-accent text-white rounded-full text-sm font-medium">Create</button>
+          <button onClick={() => onConfirm(val, target.type, target.id, labels)} className="px-6 py-2 bg-accent text-white rounded-full text-sm font-medium">Create</button>
         </div>
       </motion.div>
     </div>
@@ -1612,13 +1817,49 @@ function EditTaskModal({ task, data, appSettings, onClose, onSave, onMove }: { t
             </div>
           </div>
 
+          <DependencySelector
+            label="Dependencies"
+            items={(() => {
+              const scopedTasks: Task[] = [];
+              if (currentLocation.projectId) {
+                data.areas.forEach(a => a.projects.forEach(p => {
+                  if (p.id === currentLocation.projectId) {
+                    p.tasks.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); });
+                    p.phases.forEach(ph => ph.tasks.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); }));
+                  }
+                }));
+              } else if (currentLocation.areaId) {
+                const area = data.areas.find(a => a.id === currentLocation.areaId);
+                if (area) {
+                  (area.tasks || []).forEach(t => { if (t.id !== task.id) scopedTasks.push(t); });
+                  area.projects.forEach(p => {
+                    p.tasks.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); });
+                    p.phases.forEach(ph => ph.tasks.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); }));
+                  });
+                }
+              } else {
+                data.inbox.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); });
+                data.areas.forEach(a => {
+                  (a.tasks || []).forEach(t => { if (t.id !== task.id) scopedTasks.push(t); });
+                  a.projects.forEach(p => {
+                    p.tasks.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); });
+                    p.phases.forEach(ph => ph.tasks.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); }));
+                  });
+                });
+              }
+              return scopedTasks;
+            })()}
+            selected={edited.dependsOn || []}
+            onChange={(deps) => setEdited({ ...edited, dependsOn: deps })}
+          />
+
           <div className="pt-4 border-t border-black/5 space-y-4">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">Location</label>
-            
+
             <div className="space-y-3">
               <div>
                 <label className="text-[9px] text-gray-400 uppercase mb-1 block">Area</label>
-                <select 
+                <select
                   className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
                   value={moveTarget.areaId || 'inbox'}
                   onChange={(e) => {
@@ -1863,6 +2104,12 @@ function EditProjectModal({ project, areas, appSettings, onClose, onSave, onMove
               <button onClick={addLabel} className="p-2 bg-accent text-white rounded-xl"><Plus size={18} /></button>
             </div>
           </div>
+          <DependencySelector
+            label="Dependencies"
+            items={areas.flatMap(a => a.projects).filter(p => p.id !== project.id)}
+            selected={edited.dependsOn || []}
+            onChange={(deps) => setEdited({ ...edited, dependsOn: deps })}
+          />
 
           <div className="pt-4 border-t border-black/5">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Move Project</label>
@@ -2061,7 +2308,7 @@ function KanbanView({ data, group, filter, searchQuery, display, showBacklog, de
                       key={task.id}
                       className="glass p-4 rounded-xl group hover:border-accent/30 transition-all cursor-pointer"
                       onClick={() => onEdit(task)}
-                      style={task.areaColor ? { borderLeft: `3px solid ${task.areaColor}` } : undefined}
+                      style={task.areaColor ? { borderLeft: `5px solid ${task.areaColor}`, backgroundColor: `${task.areaColor}10` } : undefined}
                     >
                       <div className="flex items-start justify-between mb-2">
                         <h5 className="text-sm font-semibold leading-tight">{task.title}</h5>
@@ -2262,6 +2509,561 @@ function CompletedView({ data, searchQuery, onToggle, onEdit, onDelete }: { data
   );
 }
 
+// --- Graph View (Obsidian-style force-directed) ---
+
+interface GraphNode extends SimulationNodeDatum {
+  id: string;
+  label: string;
+  nodeType: 'areaGroup' | 'area' | 'project' | 'phase' | 'task';
+  status?: string;
+  nodeId: string;
+  areaId?: string;
+  projectId?: string;
+  phaseId?: string;
+  areaColor?: string;
+  location?: string;
+  connectionCount: number;
+}
+
+interface GraphLink extends SimulationLinkDatum<GraphNode> {
+  id: string;
+  isDependency: boolean;
+}
+
+const GRAPH_TYPE_COLORS: Record<string, string> = {
+  areaGroup: '#6b7280',
+  area: '#8b5cf6',
+  project: '#3b82f6',
+  phase: '#f59e0b',
+  task: '#10b981',
+};
+
+function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, searchQuery?: string, onNavigate: (view: any) => void }) {
+  const svgRef = React.useRef<SVGSVGElement>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const simulationRef = React.useRef<any>(null);
+  const [filterArea, setFilterArea] = useState('');
+  const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
+  const [filterStatus, setFilterStatus] = useState('');
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
+  const [graphLinks, setGraphLinks] = useState<GraphLink[]>([]);
+  const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
+  const [dragNode, setDragNode] = useState<string | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const isPanning = React.useRef(false);
+  const panStart = React.useRef({ x: 0, y: 0, tx: 0, ty: 0 });
+
+  // Build graph data
+  const { rawNodes, rawLinks } = useMemo(() => {
+    const nodes: GraphNode[] = [];
+    const links: GraphLink[] = [];
+    const connectionCounter: Record<string, number> = {};
+
+    const addConnection = (id: string) => { connectionCounter[id] = (connectionCounter[id] || 0) + 1; };
+
+    // AreaGroups
+    (data.areaGroups || []).forEach(group => {
+      nodes.push({ id: `group-${group.id}`, label: group.title, nodeType: 'areaGroup', nodeId: group.id, connectionCount: 0 });
+    });
+
+    // Areas
+    data.areas.forEach(area => {
+      nodes.push({ id: `area-${area.id}`, label: area.title, nodeType: 'area', nodeId: area.id, areaColor: area.color, status: area.inactive ? 'Inactive' : undefined, connectionCount: 0 });
+      if (area.groupId) {
+        links.push({ id: `e-g-${area.groupId}-a-${area.id}`, source: `group-${area.groupId}`, target: `area-${area.id}`, isDependency: false });
+        addConnection(`group-${area.groupId}`); addConnection(`area-${area.id}`);
+      }
+
+      // Area tasks
+      area.tasks.forEach(task => {
+        nodes.push({ id: `task-${task.id}`, label: task.title, nodeType: 'task', nodeId: task.id, areaId: area.id, areaColor: area.color, status: task.status, connectionCount: 0 });
+        links.push({ id: `e-a-${area.id}-t-${task.id}`, source: `area-${area.id}`, target: `task-${task.id}`, isDependency: false });
+        addConnection(`area-${area.id}`); addConnection(`task-${task.id}`);
+        (task.dependsOn || []).forEach(depId => {
+          links.push({ id: `dep-t-${task.id}-${depId}`, source: `task-${depId}`, target: `task-${task.id}`, isDependency: true });
+          addConnection(`task-${depId}`); addConnection(`task-${task.id}`);
+        });
+      });
+
+      // Projects
+      area.projects.forEach(project => {
+        nodes.push({ id: `project-${project.id}`, label: project.title, nodeType: 'project', nodeId: project.id, areaId: area.id, areaColor: area.color, status: project.status, connectionCount: 0 });
+        links.push({ id: `e-a-${area.id}-p-${project.id}`, source: `area-${area.id}`, target: `project-${project.id}`, isDependency: false });
+        addConnection(`area-${area.id}`); addConnection(`project-${project.id}`);
+        (project.dependsOn || []).forEach(depId => {
+          links.push({ id: `dep-p-${project.id}-${depId}`, source: `project-${depId}`, target: `project-${project.id}`, isDependency: true });
+          addConnection(`project-${depId}`); addConnection(`project-${project.id}`);
+        });
+
+        // Project tasks
+        project.tasks.forEach(task => {
+          nodes.push({ id: `task-${task.id}`, label: task.title, nodeType: 'task', nodeId: task.id, areaId: area.id, projectId: project.id, areaColor: area.color, status: task.status, connectionCount: 0 });
+          links.push({ id: `e-p-${project.id}-t-${task.id}`, source: `project-${project.id}`, target: `task-${task.id}`, isDependency: false });
+          addConnection(`project-${project.id}`); addConnection(`task-${task.id}`);
+          (task.dependsOn || []).forEach(depId => {
+            links.push({ id: `dep-t-${task.id}-${depId}`, source: `task-${depId}`, target: `task-${task.id}`, isDependency: true });
+            addConnection(`task-${depId}`); addConnection(`task-${task.id}`);
+          });
+        });
+
+        // Phases
+        project.phases.forEach(phase => {
+          nodes.push({ id: `phase-${phase.id}`, label: phase.title, nodeType: 'phase', nodeId: phase.id, areaId: area.id, projectId: project.id, areaColor: area.color, status: phase.status, connectionCount: 0 });
+          links.push({ id: `e-p-${project.id}-ph-${phase.id}`, source: `project-${project.id}`, target: `phase-${phase.id}`, isDependency: false });
+          addConnection(`project-${project.id}`); addConnection(`phase-${phase.id}`);
+          (phase.dependsOn || []).forEach(depId => {
+            links.push({ id: `dep-ph-${phase.id}-${depId}`, source: `phase-${depId}`, target: `phase-${phase.id}`, isDependency: true });
+            addConnection(`phase-${depId}`); addConnection(`phase-${phase.id}`);
+          });
+
+          phase.tasks.forEach(task => {
+            nodes.push({ id: `task-${task.id}`, label: task.title, nodeType: 'task', nodeId: task.id, areaId: area.id, projectId: project.id, phaseId: phase.id, areaColor: area.color, status: task.status, connectionCount: 0 });
+            links.push({ id: `e-ph-${phase.id}-t-${task.id}`, source: `phase-${phase.id}`, target: `task-${task.id}`, isDependency: false });
+            addConnection(`phase-${phase.id}`); addConnection(`task-${task.id}`);
+            (task.dependsOn || []).forEach(depId => {
+              links.push({ id: `dep-t-${task.id}-${depId}`, source: `task-${depId}`, target: `task-${task.id}`, isDependency: true });
+              addConnection(`task-${depId}`); addConnection(`task-${task.id}`);
+            });
+          });
+        });
+      });
+    });
+
+    // Inbox tasks
+    data.inbox.forEach(task => {
+      nodes.push({ id: `task-${task.id}`, label: task.title, nodeType: 'task', nodeId: task.id, location: 'inbox', status: task.status, connectionCount: 0 });
+      (task.dependsOn || []).forEach(depId => {
+        links.push({ id: `dep-t-${task.id}-${depId}`, source: `task-${depId}`, target: `task-${task.id}`, isDependency: true });
+        addConnection(`task-${depId}`); addConnection(`task-${task.id}`);
+      });
+    });
+
+    // Assign connection counts
+    nodes.forEach(n => { n.connectionCount = connectionCounter[n.id] || 0; });
+
+    // Filter out links that reference non-existing nodes
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const validLinks = links.filter(l => nodeIds.has(l.source as string) && nodeIds.has(l.target as string));
+
+    return { rawNodes: nodes, rawLinks: validLinks };
+  }, [data]);
+
+  // Filter
+  const { filteredNodes, filteredLinks } = useMemo(() => {
+    const fn = rawNodes.filter(n => {
+      if (hiddenTypes.has(n.nodeType)) return false;
+      if (filterArea && n.areaId && n.areaId !== filterArea) return false;
+      if (filterStatus && n.status && n.status !== filterStatus) return false;
+      if (searchQuery && searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        if (!n.label.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+    const fnIds = new Set(fn.map(n => n.id));
+    const fl = rawLinks.filter(l => fnIds.has(l.source as string) && fnIds.has(l.target as string));
+    return { filteredNodes: fn, filteredLinks: fl };
+  }, [rawNodes, rawLinks, hiddenTypes, filterArea, filterStatus, searchQuery]);
+
+  // Run force simulation
+  React.useEffect(() => {
+    if (filteredNodes.length === 0) return;
+
+    const nodes = filteredNodes.map(n => ({ ...n }));
+    const links = filteredLinks.map(l => ({ ...l, source: l.source as string, target: l.target as string }));
+
+    const sim = forceSimulation(nodes)
+      .force('link', forceLink<GraphNode, GraphLink>(links).id(d => d.id).distance(120).strength(0.4))
+      .force('charge', forceManyBody().strength(-300))
+      .force('center', forceCenter(0, 0).strength(0.1))
+      .force('collide', forceCollide<GraphNode>().radius(d => getNodeRadius(d) + 20).strength(0.7))
+      .force('x', forceX(0).strength(0.02))
+      .force('y', forceY(0).strength(0.02))
+      .alphaDecay(0.02)
+      .velocityDecay(0.3);
+
+    simulationRef.current = sim;
+
+    sim.on('tick', () => {
+      setGraphNodes([...nodes]);
+      setGraphLinks(links.map(l => ({
+        ...l,
+        source: (l.source as any).id || l.source,
+        target: (l.target as any).id || l.target,
+        _sx: (l.source as any).x,
+        _sy: (l.source as any).y,
+        _tx: (l.target as any).x,
+        _ty: (l.target as any).y,
+      })) as any);
+    });
+
+    // Run for initial stabilization
+    sim.alpha(1).restart();
+
+    return () => { sim.stop(); };
+  }, [filteredNodes, filteredLinks]);
+
+  // Node size based on connection count
+  const getNodeRadius = (node: GraphNode) => {
+    const base = node.nodeType === 'areaGroup' ? 28 : node.nodeType === 'area' ? 24 : node.nodeType === 'project' ? 20 : node.nodeType === 'phase' ? 16 : 12;
+    return base + Math.min(node.connectionCount * 3, 20);
+  };
+
+  const getNodeColor = (node: GraphNode) => node.areaColor || GRAPH_TYPE_COLORS[node.nodeType] || '#6b7280';
+
+  // Shape paths for each type
+  const getNodeShape = (node: GraphNode, r: number) => {
+    const type = node.nodeType;
+    if (type === 'areaGroup') {
+      // Hexagon
+      const pts = Array.from({ length: 6 }, (_, i) => {
+        const angle = (Math.PI / 3) * i - Math.PI / 6;
+        return `${Math.cos(angle) * r},${Math.sin(angle) * r}`;
+      });
+      return `M${pts.join('L')}Z`;
+    }
+    if (type === 'area') {
+      // Rounded square (use rect, but for path: square with chamfered corners)
+      const s = r * 0.85;
+      const c = s * 0.3;
+      return `M${-s + c},${-s} L${s - c},${-s} Q${s},${-s} ${s},${-s + c} L${s},${s - c} Q${s},${s} ${s - c},${s} L${-s + c},${s} Q${-s},${s} ${-s},${s - c} L${-s},${-s + c} Q${-s},${-s} ${-s + c},${-s}Z`;
+    }
+    if (type === 'project') {
+      // Diamond
+      return `M0,${-r} L${r},0 L0,${r} L${-r},0Z`;
+    }
+    if (type === 'phase') {
+      // Pentagon
+      const pts = Array.from({ length: 5 }, (_, i) => {
+        const angle = (Math.PI * 2 / 5) * i - Math.PI / 2;
+        return `${Math.cos(angle) * r},${Math.sin(angle) * r}`;
+      });
+      return `M${pts.join('L')}Z`;
+    }
+    // Task: circle (use circle element instead, but we can approximate)
+    return '';
+  };
+
+  // Zoom handler
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    const newK = Math.max(0.1, Math.min(4, transform.k * delta));
+    // Zoom toward mouse position
+    const newX = mouseX - (mouseX - transform.x) * (newK / transform.k);
+    const newY = mouseY - (mouseY - transform.y) * (newK / transform.k);
+    setTransform({ x: newX, y: newY, k: newK });
+  };
+
+  // Pan handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.graph-node')) return;
+    isPanning.current = true;
+    panStart.current = { x: e.clientX, y: e.clientY, tx: transform.x, ty: transform.y };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPanning.current) {
+      setTransform(t => ({
+        ...t,
+        x: panStart.current.tx + (e.clientX - panStart.current.x),
+        y: panStart.current.ty + (e.clientY - panStart.current.y),
+      }));
+    }
+    if (dragNode && simulationRef.current) {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = (e.clientX - rect.left - transform.x) / transform.k;
+      const y = (e.clientY - rect.top - transform.y) / transform.k;
+
+      const sim = simulationRef.current;
+      const node = sim.nodes().find((n: any) => n.id === dragNode);
+      if (node) {
+        node.fx = x;
+        node.fy = y;
+        sim.alpha(0.3).restart();
+      }
+    }
+  };
+
+  const handleMouseUp = () => {
+    isPanning.current = false;
+    if (dragNode && simulationRef.current) {
+      const sim = simulationRef.current;
+      const node = sim.nodes().find((n: any) => n.id === dragNode);
+      if (node) {
+        node.fx = null;
+        node.fy = null;
+        sim.alpha(0.3).restart();
+      }
+      setDragNode(null);
+    }
+  };
+
+  const handleNodeDragStart = (e: React.MouseEvent, nodeId: string) => {
+    e.stopPropagation();
+    setDragNode(nodeId);
+    if (simulationRef.current) {
+      const sim = simulationRef.current;
+      const node = sim.nodes().find((n: any) => n.id === nodeId);
+      if (node) {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        node.fx = (e.clientX - rect.left - transform.x) / transform.k;
+        node.fy = (e.clientY - rect.top - transform.y) / transform.k;
+        sim.alpha(0.3).restart();
+      }
+    }
+  };
+
+  // Center view
+  const centerView = () => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setTransform({ x: rect.width / 2, y: rect.height / 2, k: 1 });
+  };
+
+  React.useEffect(() => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) setTransform({ x: rect.width / 2, y: rect.height / 2, k: 0.8 });
+  }, []);
+
+  const handleNavigate = () => {
+    if (!selectedNode) return;
+    const { nodeType, nodeId, areaId, projectId } = selectedNode;
+    if (nodeType === 'area') onNavigate({ type: 'area', id: nodeId });
+    else if (nodeType === 'project') onNavigate({ type: 'project', id: nodeId, parentId: areaId });
+    else if (nodeType === 'phase') onNavigate({ type: 'phase', id: nodeId, parentId: projectId, grandParentId: areaId });
+    else if (nodeType === 'task' && selectedNode.location === 'inbox') onNavigate({ type: 'inbox' });
+    else if (nodeType === 'task') onNavigate(areaId ? { type: 'area', id: areaId } : { type: 'inbox' });
+    setSelectedNode(null);
+  };
+
+  // Build a lookup for rendering
+  const nodeMap = useMemo(() => {
+    const m: Record<string, GraphNode> = {};
+    graphNodes.forEach(n => { m[n.id] = n; });
+    return m;
+  }, [graphNodes]);
+
+  // Connected node highlighting
+  const connectedIds = useMemo(() => {
+    if (!hoveredNode) return new Set<string>();
+    const ids = new Set<string>([hoveredNode]);
+    graphLinks.forEach((l: any) => {
+      const src = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgt = typeof l.target === 'object' ? l.target.id : l.target;
+      if (src === hoveredNode) ids.add(tgt);
+      if (tgt === hoveredNode) ids.add(src);
+    });
+    return ids;
+  }, [hoveredNode, graphLinks]);
+
+  return (
+    <div className="space-y-4" style={{ height: 'calc(100vh - 180px)' }}>
+      {/* Filter bar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Filter size={14} className="text-gray-400" />
+        {/* Type toggles */}
+        {(['areaGroup', 'area', 'project', 'phase', 'task'] as const).map(type => {
+          const labels: Record<string, string> = { areaGroup: 'Groups', area: 'Areas', project: 'Projects', phase: 'Phases', task: 'Tasks' };
+          const isVisible = !hiddenTypes.has(type);
+          return (
+            <button
+              key={type}
+              onClick={() => setHiddenTypes(prev => {
+                const next = new Set(prev);
+                if (next.has(type)) next.delete(type); else next.add(type);
+                return next;
+              })}
+              className={cn("text-[10px] px-2.5 py-1 rounded-full border font-medium transition-colors flex items-center gap-1.5",
+                isVisible ? "border-black/10 text-gray-700 bg-white" : "border-transparent bg-black/5 text-gray-400 line-through"
+              )}
+            >
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: isVisible ? GRAPH_TYPE_COLORS[type] : '#d1d5db' }} />
+              {labels[type]}
+            </button>
+          );
+        })}
+        <div className="h-4 w-px bg-black/10" />
+        <select value={filterArea} onChange={(e) => setFilterArea(e.target.value)} className="bg-black/5 border-none rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-accent outline-none">
+          <option value="">All Areas</option>
+          {data.areas.map(a => <option key={a.id} value={a.id}>{a.title}</option>)}
+        </select>
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="bg-black/5 border-none rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-accent outline-none">
+          <option value="">All Statuses</option>
+          <option value="Backlog">Backlog</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Done">Done</option>
+        </select>
+        {/* Legend */}
+        <div className="flex items-center gap-2 ml-auto text-[10px] text-gray-400">
+          <span className="flex items-center gap-1"><span className="w-5 h-0.5 bg-gray-300 inline-block" /> Hierarchy</span>
+          <span className="flex items-center gap-1"><span className="w-5 h-0.5 inline-block" style={{ borderTop: '2px dashed #f59e0b' }} /> Dependency</span>
+        </div>
+        <button onClick={centerView} className="p-1.5 rounded-lg bg-black/5 hover:bg-black/10 text-gray-500 transition-colors" title="Center view">
+          <Target size={14} />
+        </button>
+      </div>
+
+      {/* SVG Graph Canvas */}
+      <div
+        ref={containerRef}
+        className="rounded-2xl border border-black/10 overflow-hidden bg-[#fafafa] relative select-none"
+        style={{ height: 'calc(100% - 50px)', cursor: dragNode ? 'grabbing' : isPanning.current ? 'grabbing' : 'grab' }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onWheel={handleWheel}
+      >
+        <svg ref={svgRef} width="100%" height="100%" className="block">
+          <g transform={`translate(${transform.x},${transform.y}) scale(${transform.k})`}>
+            {/* Edges */}
+            {graphLinks.map((link: any) => {
+              const src = nodeMap[typeof link.source === 'object' ? link.source.id : link.source];
+              const tgt = nodeMap[typeof link.target === 'object' ? link.target.id : link.target];
+              if (!src || !tgt || src.x == null || tgt.x == null) return null;
+              const isHighlighted = hoveredNode && (connectedIds.has(src.id) && connectedIds.has(tgt.id));
+              const opacity = hoveredNode ? (isHighlighted ? 1 : 0.1) : 0.4;
+              return (
+                <line
+                  key={link.id}
+                  x1={src.x} y1={src.y}
+                  x2={tgt.x} y2={tgt.y}
+                  stroke={link.isDependency ? '#f59e0b' : '#cbd5e1'}
+                  strokeWidth={link.isDependency ? 1.5 : 1}
+                  strokeDasharray={link.isDependency ? '6 4' : undefined}
+                  opacity={opacity}
+                  style={{ transition: 'opacity 0.2s' }}
+                />
+              );
+            })}
+            {/* Nodes */}
+            {graphNodes.map(node => {
+              if (node.x == null || node.y == null) return null;
+              const r = getNodeRadius(node);
+              const color = getNodeColor(node);
+              const isHovered = hoveredNode === node.id;
+              const isConnected = connectedIds.has(node.id);
+              const opacity = hoveredNode ? (isConnected ? 1 : 0.15) : 1;
+              const shape = node.nodeType === 'task' ? null : getNodeShape(node, r);
+              const showLabel = transform.k > 0.4 || isHovered;
+
+              return (
+                <g
+                  key={node.id}
+                  className="graph-node"
+                  transform={`translate(${node.x},${node.y})`}
+                  style={{ cursor: 'pointer', opacity, transition: 'opacity 0.2s' }}
+                  onMouseDown={(e) => handleNodeDragStart(e, node.id)}
+                  onMouseEnter={() => setHoveredNode(node.id)}
+                  onMouseLeave={() => setHoveredNode(null)}
+                  onClick={(e) => { e.stopPropagation(); setSelectedNode(node); }}
+                >
+                  {/* Glow on hover */}
+                  {isHovered && (
+                    node.nodeType === 'task'
+                      ? <circle r={r + 6} fill={color} opacity={0.15} />
+                      : <path d={getNodeShape(node, r + 6)} fill={color} opacity={0.15} />
+                  )}
+                  {/* Shape */}
+                  {node.nodeType === 'task' ? (
+                    <circle
+                      r={r}
+                      fill={color}
+                      opacity={0.9}
+                      stroke={isHovered ? '#fff' : 'transparent'}
+                      strokeWidth={2}
+                    />
+                  ) : (
+                    <path
+                      d={shape!}
+                      fill={color}
+                      opacity={0.85}
+                      stroke={isHovered ? '#fff' : `${color}40`}
+                      strokeWidth={node.nodeType === 'area' ? 3 : 2}
+                    />
+                  )}
+                  {/* Inner icon/text */}
+                  <text
+                    textAnchor="middle"
+                    dy="0.35em"
+                    fill="white"
+                    fontSize={Math.max(8, r * 0.45)}
+                    fontWeight="700"
+                    style={{ pointerEvents: 'none', userSelect: 'none' }}
+                  >
+                    {node.label.substring(0, r > 20 ? 3 : 1).toUpperCase()}
+                  </text>
+                  {/* Label below */}
+                  {showLabel && (
+                    <text
+                      textAnchor="middle"
+                      y={r + 14}
+                      fill="#374151"
+                      fontSize={10}
+                      fontWeight="500"
+                      style={{ pointerEvents: 'none', userSelect: 'none' }}
+                    >
+                      {node.label.length > 20 ? node.label.substring(0, 18) + '...' : node.label}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+
+        {/* Zoom controls */}
+        <div className="absolute bottom-4 right-4 flex flex-col gap-1">
+          <button onClick={() => setTransform(t => ({ ...t, k: Math.min(4, t.k * 1.3) }))} className="w-8 h-8 rounded-lg bg-white shadow-md border border-black/10 flex items-center justify-center text-gray-500 hover:text-gray-700 text-lg font-bold">+</button>
+          <button onClick={() => setTransform(t => ({ ...t, k: Math.max(0.1, t.k * 0.77) }))} className="w-8 h-8 rounded-lg bg-white shadow-md border border-black/10 flex items-center justify-center text-gray-500 hover:text-gray-700 text-lg font-bold">-</button>
+          <button onClick={centerView} className="w-8 h-8 rounded-lg bg-white shadow-md border border-black/10 flex items-center justify-center text-gray-500 hover:text-gray-700"><Target size={14} /></button>
+        </div>
+      </div>
+
+      {/* Info popup */}
+      <AnimatePresence>
+        {selectedNode && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setSelectedNode(null)}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl p-6 shadow-2xl w-full max-w-sm"
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: getNodeColor(selectedNode) }} />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{selectedNode.nodeType}</span>
+              </div>
+              <h3 className="text-lg font-bold mb-1">{selectedNode.label}</h3>
+              {selectedNode.status && (
+                <Badge className={cn(
+                  selectedNode.status === 'Done' ? "bg-green-50 text-green-600" :
+                  selectedNode.status === 'In Progress' ? "bg-accent/10 text-accent" :
+                  "bg-black/5 text-gray-500"
+                )}>{selectedNode.status}</Badge>
+              )}
+              <p className="text-xs text-gray-400 mt-2">{selectedNode.connectionCount} connection{selectedNode.connectionCount !== 1 ? 's' : ''}</p>
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => setSelectedNode(null)} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">Close</button>
+                <button onClick={handleNavigate} className="px-4 py-2 bg-accent text-white rounded-full text-sm font-medium">Open Detail View</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function SettingsView({ data, updateData, deleteArea }: { data: any, updateData: any, deleteArea: any }) {
   const settings: AppSettings = data.settings || {
     taskStatuses: ['Backlog', 'In Progress', 'Done'],
@@ -2454,7 +3256,7 @@ function TaskList({ tasks, onToggle, onEdit, onDelete, display, onReorder }: { t
             "group glass p-4 rounded-xl flex items-center gap-4 hover:border-accent/30 transition-all cursor-pointer",
             overIdx === idx && dragIdx !== null && dragIdx !== idx && "border-accent/50 bg-accent/5"
           )}
-          style={task.areaColor ? { borderLeft: `3px solid ${task.areaColor}` } : undefined}
+          style={task.areaColor ? { borderLeft: `5px solid ${task.areaColor}`, backgroundColor: `${task.areaColor}10` } : undefined}
           onClick={() => onEdit(task)}
         >
           {onReorder && (
@@ -2615,6 +3417,32 @@ function ProjectCard({ project, onClick, onEdit, onDelete }: { project: Project,
         </div>
       )}
 
+      {/* Next event countdown */}
+      {(() => {
+        const events = (project.events || [])
+          .map(ev => {
+            const evDate = ev.time ? new Date(`${ev.date}T${ev.time}`) : new Date(ev.date + 'T23:59:59');
+            return { ...ev, evDate };
+          })
+          .filter(ev => ev.evDate.getTime() > Date.now())
+          .sort((a, b) => a.evDate.getTime() - b.evDate.getTime());
+        const next = events[0];
+        if (!next) return null;
+        const diffMs = next.evDate.getTime() - Date.now();
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        return (
+          <div className="mt-3 flex items-center gap-2 text-xs">
+            <Clock size={12} className={diffDays <= 3 ? "text-orange-500" : "text-accent"} />
+            <span className={cn("font-medium", diffDays <= 3 ? "text-orange-500" : "text-accent")}>
+              {next.title}: {diffDays === 0 ? (next.time ? `${diffHours}h left` : 'Today') :
+               diffDays === 1 ? (next.time ? `1d ${diffHours}h` : '1 day left') :
+               next.time ? `${diffDays}d ${diffHours}h` : `${diffDays} days left`}
+            </span>
+          </div>
+        );
+      })()}
+
       <div className="flex items-center gap-4 mt-4 text-[10px] text-gray-400 font-medium uppercase tracking-wider">
         <div className="flex items-center gap-1">
           <Calendar size={12} />
@@ -2639,6 +3467,60 @@ function getYouTubeId(url: string): string | null {
 
 function getUrlDomain(url: string): string {
   try { return new URL(url).hostname.replace('www.', ''); } catch { return url; }
+}
+
+function DependencySelector({ label, items, selected, onChange }: { label: string, items: { id: string, title: string }[], selected: string[], onChange: (deps: string[]) => void }) {
+  const [depSearch, setDepSearch] = useState('');
+  if (items.length === 0) return null;
+
+  const filtered = depSearch.trim()
+    ? items.filter(t => t.title.toLowerCase().includes(depSearch.trim().toLowerCase()))
+    : items;
+
+  // Show selected items first, then filtered unselected
+  const selectedItems = items.filter(t => selected.includes(t.id));
+  const unselectedFiltered = filtered.filter(t => !selected.includes(t.id));
+
+  return (
+    <div>
+      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">{label}</label>
+      {selectedItems.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {selectedItems.map(t => (
+            <button
+              key={t.id}
+              onClick={() => onChange(selected.filter(id => id !== t.id))}
+              className="text-[10px] px-2 py-1 rounded-full border bg-amber-50 text-amber-600 border-amber-200 transition-colors flex items-center gap-1"
+            >
+              {t.title}
+              <X size={8} />
+            </button>
+          ))}
+        </div>
+      )}
+      <input
+        type="text"
+        placeholder="Search..."
+        className="w-full bg-black/5 border-none rounded-xl px-3 py-1.5 text-xs focus:ring-2 focus:ring-accent outline-none mb-2"
+        value={depSearch}
+        onChange={(e) => setDepSearch(e.target.value)}
+      />
+      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+        {unselectedFiltered.map(t => (
+          <button
+            key={t.id}
+            onClick={() => onChange([...selected, t.id])}
+            className="text-[10px] px-2 py-1 rounded-full border bg-black/5 text-gray-500 border-transparent hover:border-black/10 transition-colors"
+          >
+            {t.title}
+          </button>
+        ))}
+        {unselectedFiltered.length === 0 && depSearch.trim() && (
+          <span className="text-[10px] text-gray-400">No matches</span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function ResourceList({ resources, onAdd, onDelete, onPreview }: { resources: Resource[], onAdd: (r: Resource) => void, onDelete: (id: string) => void, onPreview: (r: Resource) => void }) {
@@ -2822,7 +3704,7 @@ function FilePreviewModal({ resource, onClose }: { resource: Resource, onClose: 
   );
 }
 
-function EditPhaseModal({ phase, appSettings, onClose, onSave }: { phase: Phase, appSettings: AppSettings, onClose: () => void, onSave: (p: Phase) => void }) {
+function EditPhaseModal({ phase, appSettings, allPhases, onClose, onSave }: { phase: Phase, appSettings: AppSettings, allPhases?: Phase[], onClose: () => void, onSave: (p: Phase) => void }) {
   const [edited, setEdited] = useState<Phase>({ ...phase });
   const [newLabel, setNewLabel] = useState('');
 
@@ -2923,6 +3805,14 @@ function EditPhaseModal({ phase, appSettings, onClose, onSave }: { phase: Phase,
               <button onClick={addLabel} className="p-2 bg-accent text-white rounded-xl"><Plus size={18} /></button>
             </div>
           </div>
+          {allPhases && allPhases.length > 1 && (
+            <DependencySelector
+              label="Dependencies"
+              items={allPhases.filter(p => p.id !== phase.id)}
+              selected={edited.dependsOn || []}
+              onChange={(deps) => setEdited({ ...edited, dependsOn: deps })}
+            />
+          )}
         </div>
 
         <div className="flex justify-end gap-3 mt-8">
@@ -3060,6 +3950,150 @@ function EditAreaModal({ area, areaGroups, onClose, onSave, onDelete }: { area: 
             <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">Cancel</button>
             <button onClick={() => onSave(edited)} className="px-6 py-2 bg-accent text-white rounded-full text-sm font-medium">Save Changes</button>
           </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function EditEventModal({ event, project, onClose, onSave }: {
+  event: ProjectEvent | null;
+  project: Project;
+  onClose: () => void;
+  onSave: (event: ProjectEvent) => void;
+}) {
+  const [title, setTitle] = useState(event?.title || '');
+  const [description, setDescription] = useState(event?.description || '');
+  const [date, setDate] = useState(event?.date || new Date().toISOString().split('T')[0]);
+  const [time, setTime] = useState(event?.time || '');
+  const [linkedPhaseIds, setLinkedPhaseIds] = useState<string[]>(event?.linkedPhaseIds || []);
+  const [linkedTaskIds, setLinkedTaskIds] = useState<string[]>(event?.linkedTaskIds || []);
+
+  const allTasks = [...project.tasks, ...project.phases.flatMap(ph => ph.tasks)];
+
+  const handleSave = () => {
+    if (!title.trim()) return;
+    onSave({
+      id: event?.id || Math.random().toString(36).substring(2, 11),
+      title: title.trim(),
+      description: description.trim() || undefined,
+      date,
+      time: time || undefined,
+      linkedPhaseIds: linkedPhaseIds.length > 0 ? linkedPhaseIds : undefined,
+      linkedTaskIds: linkedTaskIds.length > 0 ? linkedTaskIds : undefined,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-3xl w-full max-w-lg p-8 shadow-2xl max-h-[90vh] overflow-y-auto"
+      >
+        <h2 className="text-xl font-bold mb-6">{event ? 'Edit Event' : 'New Event'}</h2>
+
+        <div className="space-y-5">
+          <div>
+            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Title</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border border-black/10 text-sm focus:outline-none focus:ring-2 focus:ring-accent/20"
+              placeholder="Event title..."
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border border-black/10 text-sm focus:outline-none focus:ring-2 focus:ring-accent/20 resize-none"
+              rows={2}
+              placeholder="Brief description..."
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Date</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-black/10 text-sm focus:outline-none focus:ring-2 focus:ring-accent/20"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Time (optional)</label>
+              <input
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-black/10 text-sm focus:outline-none focus:ring-2 focus:ring-accent/20"
+              />
+            </div>
+          </div>
+
+          {project.phases.length > 0 && (
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Linked Phases</label>
+              <div className="flex flex-wrap gap-2">
+                {project.phases.map(phase => (
+                  <button
+                    key={phase.id}
+                    onClick={() => setLinkedPhaseIds(prev =>
+                      prev.includes(phase.id) ? prev.filter(id => id !== phase.id) : [...prev, phase.id]
+                    )}
+                    className={cn(
+                      "text-xs px-3 py-1.5 rounded-full border transition-colors",
+                      linkedPhaseIds.includes(phase.id)
+                        ? "bg-purple-50 text-purple-600 border-purple-200"
+                        : "bg-black/5 text-gray-500 border-transparent hover:border-black/10"
+                    )}
+                  >
+                    <Layers size={10} className="inline mr-1" />
+                    {phase.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {allTasks.length > 0 && (
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Linked Tasks</label>
+              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                {allTasks.map(task => (
+                  <button
+                    key={task.id}
+                    onClick={() => setLinkedTaskIds(prev =>
+                      prev.includes(task.id) ? prev.filter(id => id !== task.id) : [...prev, task.id]
+                    )}
+                    className={cn(
+                      "text-xs px-3 py-1.5 rounded-full border transition-colors",
+                      linkedTaskIds.includes(task.id)
+                        ? "bg-blue-50 text-blue-600 border-blue-200"
+                        : "bg-black/5 text-gray-500 border-transparent hover:border-black/10"
+                    )}
+                  >
+                    <CheckCircle2 size={10} className="inline mr-1" />
+                    {task.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 mt-8">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">Cancel</button>
+          <button onClick={handleSave} className="px-6 py-2 bg-accent text-white rounded-full text-sm font-medium">{event ? 'Save Changes' : 'Create Event'}</button>
         </div>
       </motion.div>
     </div>

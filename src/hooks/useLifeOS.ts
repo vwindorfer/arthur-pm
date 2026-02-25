@@ -51,7 +51,8 @@ function normalizeData(parsed: any): LifeOSData {
     description: t.description || '',
     labels: t.labels || [],
     attachments: t.attachments || [],
-    contextTags: t.contextTags || []
+    contextTags: t.contextTags || [],
+    dependsOn: t.dependsOn || []
   });
 
   const settings = parsed.settings || {};
@@ -70,6 +71,7 @@ function normalizeData(parsed: any): LifeOSData {
         status: project.status || 'Backlog',
         labels: project.labels || [],
         attachments: project.attachments || [],
+        dependsOn: project.dependsOn || [],
         resources: (project.resources || []),
         tasks: (project.tasks || []).map(normalizeTask),
         phases: (project.phases || []).map((phase: any) => ({
@@ -77,6 +79,7 @@ function normalizeData(parsed: any): LifeOSData {
           status: phase.status || 'Backlog',
           labels: phase.labels || [],
           attachments: phase.attachments || [],
+          dependsOn: phase.dependsOn || [],
           tasks: (phase.tasks || []).map(normalizeTask)
         }))
       }))
