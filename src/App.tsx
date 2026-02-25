@@ -532,6 +532,33 @@ export default function App() {
     updateData(newData);
   };
 
+  const moveTaskToPhase = (taskId: string, projectId: string, targetPhaseId: string | null) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    newData.areas.forEach((a: any) => {
+      const p = a.projects.find((p: any) => p.id === projectId);
+      if (!p) return;
+      let task: any = null;
+      // Remove from project-level tasks
+      const ptIdx = p.tasks.findIndex((t: any) => t.id === taskId);
+      if (ptIdx !== -1) { task = p.tasks.splice(ptIdx, 1)[0]; }
+      // Remove from any phase
+      if (!task) {
+        for (const ph of p.phases) {
+          const idx = ph.tasks.findIndex((t: any) => t.id === taskId);
+          if (idx !== -1) { task = ph.tasks.splice(idx, 1)[0]; break; }
+        }
+      }
+      if (!task) return;
+      if (targetPhaseId) {
+        const targetPhase = p.phases.find((ph: any) => ph.id === targetPhaseId);
+        if (targetPhase) targetPhase.tasks.push(task);
+      } else {
+        p.tasks.push(task);
+      }
+    });
+    updateData(newData);
+  };
+
   // Event handlers
   const handleAddEvent = (projectId: string, event: ProjectEvent) => {
     const newData = JSON.parse(JSON.stringify(data));
@@ -640,17 +667,30 @@ export default function App() {
 
           {/* Area Groups and Areas */}
           {(data.areaGroups || []).map(group => (
-            <div key={group.id} className="pt-2">
+            <div key={group.id} className="pt-2"
+              onDragOver={(e) => { if (e.dataTransfer.types.includes('area-id')) { e.preventDefault(); e.currentTarget.classList.add('bg-accent/5'); } }}
+              onDragLeave={(e) => { e.currentTarget.classList.remove('bg-accent/5'); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.currentTarget.classList.remove('bg-accent/5');
+                const areaId = e.dataTransfer.getData('area-id');
+                if (areaId) {
+                  const newData = JSON.parse(JSON.stringify(data));
+                  const area = newData.areas.find((a: any) => a.id === areaId);
+                  if (area && area.groupId !== group.id) { area.groupId = group.id; updateData(newData); }
+                }
+              }}
+            >
               <div className="px-3 flex items-center justify-between group">
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{group.title}</span>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button 
+                  <button
                     onClick={() => setIsAddingArea({ groupId: group.id })}
                     className="text-gray-400 hover:text-accent transition-colors"
                   >
                     <Plus size={14} />
                   </button>
-                  <button 
+                  <button
                     onClick={() => deleteGroup(group.id)}
                     className="text-gray-400 hover:text-red-500 transition-colors"
                   >
@@ -661,6 +701,8 @@ export default function App() {
               {data.areas.filter(a => a.groupId === group.id).map(area => (
                 <button
                   key={area.id}
+                  draggable
+                  onDragStart={(e) => { e.dataTransfer.setData('area-id', area.id); e.dataTransfer.effectAllowed = 'move'; }}
                   onClick={() => setActiveView({ type: 'area', id: area.id })}
                   className={cn(
                     "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium text-left",
@@ -689,7 +731,20 @@ export default function App() {
           ))}
 
           {/* Ungrouped Areas */}
-          <div className="pt-4 pb-2 px-3 flex items-center justify-between">
+          <div className="pt-4 pb-2 px-3 flex items-center justify-between"
+            onDragOver={(e) => { if (e.dataTransfer.types.includes('area-id')) { e.preventDefault(); e.currentTarget.classList.add('bg-accent/5'); } }}
+            onDragLeave={(e) => { e.currentTarget.classList.remove('bg-accent/5'); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.currentTarget.classList.remove('bg-accent/5');
+              const areaId = e.dataTransfer.getData('area-id');
+              if (areaId) {
+                const newData = JSON.parse(JSON.stringify(data));
+                const area = newData.areas.find((a: any) => a.id === areaId);
+                if (area && area.groupId) { area.groupId = undefined; updateData(newData); }
+              }
+            }}
+          >
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Areas</span>
             <div className="flex items-center gap-2">
               <button 
@@ -740,6 +795,8 @@ export default function App() {
           {data.areas.filter(a => !a.groupId).map(area => (
             <button
               key={area.id}
+              draggable
+              onDragStart={(e) => { e.dataTransfer.setData('area-id', area.id); e.dataTransfer.effectAllowed = 'move'; }}
               onClick={() => setActiveView({ type: 'area', id: area.id })}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium text-left",
@@ -1237,13 +1294,39 @@ export default function App() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => {
+                          const newData = JSON.parse(JSON.stringify(data));
+                          newData.areas.forEach((a: any) => {
+                            const p = a.projects.find((p: any) => p.id === currentProject.id);
+                            if (p) p.taskSortMode = p.taskSortMode === 'deadline' ? 'manual' : 'deadline';
+                          });
+                          updateData(newData);
+                        }}
+                        className={cn("flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors",
+                          currentProject.taskSortMode === 'deadline' ? "bg-accent/10 text-accent" : "bg-black/5 text-gray-500 hover:bg-black/10"
+                        )}
+                        title={currentProject.taskSortMode === 'deadline' ? 'Switch to manual sorting' : 'Sort tasks by deadline'}
+                      >
+                        <ArrowUpDown size={14} />
+                        {currentProject.taskSortMode === 'deadline' ? 'By Deadline' : 'Manual'}
+                      </button>
                       <IconButton icon={Edit2} onClick={() => setEditingProject(currentProject)} />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div className="lg:col-span-2 space-y-8">
-                      <div className="space-y-4">
+                      <div className="space-y-4"
+                        onDragOver={(e) => { if (e.dataTransfer.types.includes('task-id')) { e.preventDefault(); } }}
+                        onDrop={(e) => {
+                          const taskId = e.dataTransfer.getData('task-id');
+                          if (taskId && !currentProject.tasks.some(t => t.id === taskId)) {
+                            e.preventDefault(); e.stopPropagation();
+                            moveTaskToPhase(taskId, currentProject.id, null);
+                          }
+                        }}
+                      >
                         <div className="flex items-center justify-between">
                           <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Project Tasks</h4>
                           <button
@@ -1255,12 +1338,23 @@ export default function App() {
                           </button>
                         </div>
                         <TaskList
-                          tasks={currentProject.tasks.filter(t => t.status !== 'Done').filter(t => taskMatchesSearch(t, searchQuery))}
+                          tasks={(() => {
+                            const filtered = currentProject.tasks.filter(t => t.status !== 'Done').filter(t => taskMatchesSearch(t, searchQuery));
+                            if (currentProject.taskSortMode === 'deadline') {
+                              return [...filtered].sort((a, b) => {
+                                if (!a.deadline && !b.deadline) return 0;
+                                if (!a.deadline) return 1;
+                                if (!b.deadline) return -1;
+                                return a.deadline.localeCompare(b.deadline);
+                              });
+                            }
+                            return filtered;
+                          })()}
                           onToggle={toggleTaskStatus}
                           onEdit={setEditingTask}
                           onDelete={deleteTask}
                           display={display}
-                          onReorder={(from, to) => reorderTasks(currentProject.tasks, from, to, 'project', currentProject.id)}
+                          onReorder={currentProject.taskSortMode !== 'deadline' ? (from, to) => reorderTasks(currentProject.tasks, from, to, 'project', currentProject.id) : undefined}
                         />
                       </div>
 
@@ -1273,6 +1367,12 @@ export default function App() {
                           onDragOver={(e) => e.preventDefault()}
                           onDrop={(e) => {
                             e.preventDefault();
+                            const taskId = e.dataTransfer.getData('task-id');
+                            if (taskId && !phase.tasks.some(t => t.id === taskId)) {
+                              moveTaskToPhase(taskId, currentProject.id, phase.id);
+                              setDraggedItemId(null);
+                              return;
+                            }
                             if (draggedItemId && draggedItemId !== phase.id) {
                               const fromIdx = currentProject.phases.findIndex(ph => ph.id === draggedItemId);
                               const toIdx = currentProject.phases.findIndex(ph => ph.id === phase.id);
@@ -1334,12 +1434,23 @@ export default function App() {
                             </div>
                           )}
                           <TaskList
-                            tasks={phase.tasks.filter(t => t.status !== 'Done').filter(t => taskMatchesSearch(t, searchQuery))}
+                            tasks={(() => {
+                              const filtered = phase.tasks.filter(t => t.status !== 'Done').filter(t => taskMatchesSearch(t, searchQuery));
+                              if (currentProject.taskSortMode === 'deadline') {
+                                return [...filtered].sort((a, b) => {
+                                  if (!a.deadline && !b.deadline) return 0;
+                                  if (!a.deadline) return 1;
+                                  if (!b.deadline) return -1;
+                                  return a.deadline.localeCompare(b.deadline);
+                                });
+                              }
+                              return filtered;
+                            })()}
                             onToggle={toggleTaskStatus}
                             onEdit={setEditingTask}
                             onDelete={deleteTask}
                             display={display}
-                            onReorder={(from, to) => reorderTasks(phase.tasks, from, to, 'phase', phase.id)}
+                            onReorder={currentProject.taskSortMode !== 'deadline' ? (from, to) => reorderTasks(phase.tasks, from, to, 'phase', phase.id) : undefined}
                           />
                         </div>
                       ))}
@@ -1391,21 +1502,7 @@ export default function App() {
                             <div key={event.id} className="glass p-4 rounded-xl space-y-2">
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <h4 className="font-medium text-sm text-gray-900">{event.title}</h4>
-                                    <span className={cn(
-                                      "text-[10px] font-bold px-2 py-0.5 rounded-full",
-                                      isPast ? "bg-red-50 text-red-500" :
-                                      diffDays === 0 ? "bg-amber-50 text-amber-600" :
-                                      diffDays <= 3 ? "bg-orange-50 text-orange-500" :
-                                      "bg-accent/10 text-accent"
-                                    )}>
-                                      {isPast ? 'Past' :
-                                       diffDays === 0 ? (event.time ? `${diffHours}h left` : 'Today') :
-                                       diffDays === 1 ? '1 day left' :
-                                       `${diffDays} days left`}
-                                    </span>
-                                  </div>
+                                  <h4 className="font-medium text-sm text-gray-900">{event.title}</h4>
                                   <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
                                     <Calendar size={10} />
                                     {format(new Date(event.date), 'MMM d, yyyy')}
@@ -1420,20 +1517,34 @@ export default function App() {
                               {event.description && (
                                 <p className="text-xs text-gray-500">{event.description}</p>
                               )}
-                              {(linkedPhases.length > 0 || linkedTasks.length > 0) && (
-                                <div className="flex flex-wrap gap-1.5">
-                                  {linkedPhases.map(ph => (
-                                    <span key={ph.id} className="text-[10px] bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">
-                                      <Layers size={8} className="inline mr-1" />{ph.title}
-                                    </span>
-                                  ))}
-                                  {linkedTasks.map(t => (
-                                    <span key={t.id} className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">
-                                      <CheckCircle2 size={8} className="inline mr-1" />{t.title}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
+                              <div className="flex items-end justify-between">
+                                {(linkedPhases.length > 0 || linkedTasks.length > 0) ? (
+                                  <div className="flex flex-wrap gap-1.5 flex-1">
+                                    {linkedPhases.map(ph => (
+                                      <span key={ph.id} className="text-[10px] bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">
+                                        <Layers size={8} className="inline mr-1" />{ph.title}
+                                      </span>
+                                    ))}
+                                    {linkedTasks.map(t => (
+                                      <span key={t.id} className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">
+                                        <CheckCircle2 size={8} className="inline mr-1" />{t.title}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : <div />}
+                                <span className={cn(
+                                  "text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ml-2",
+                                  isPast ? "bg-red-50 text-red-500" :
+                                  diffDays === 0 ? "bg-amber-50 text-amber-600" :
+                                  diffDays <= 3 ? "bg-orange-50 text-orange-500" :
+                                  "bg-accent/10 text-accent"
+                                )}>
+                                  {isPast ? 'Past' :
+                                   diffDays === 0 ? (event.time ? `${diffHours}h left` : 'Today') :
+                                   diffDays === 1 ? '1 day left' :
+                                   `${diffDays} days left`}
+                                </span>
+                              </div>
                             </div>
                           );
                         })}
@@ -1739,7 +1850,9 @@ function EditTaskModal({ task, data, appSettings, onClose, onSave, onMove }: { t
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Description</label>
             <textarea 
-              className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none h-20 resize-none"
+              className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none resize-none overflow-y-auto"
+              style={{ minHeight: '5rem', maxHeight: '13.5rem' }}
+              onInput={(e) => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 216) + 'px'; }}
               value={edited.description || ''}
               onChange={(e) => setEdited({ ...edited, description: e.target.value })}
               placeholder="Add an optional description..."
@@ -2022,7 +2135,9 @@ function EditProjectModal({ project, areas, appSettings, onClose, onSave, onMove
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Description</label>
             <textarea 
-              className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none h-24 resize-none"
+              className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none resize-none overflow-y-auto"
+              style={{ minHeight: '6rem', maxHeight: '13.5rem' }}
+              onInput={(e) => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 216) + 'px'; }}
               value={edited.description}
               onChange={(e) => setEdited({ ...edited, description: e.target.value })}
             />
@@ -2552,6 +2667,7 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
   const [showBacklogged, setShowBacklogged] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [highlightedNode, setHighlightedNode] = useState<string | null>(null);
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphLinks, setGraphLinks] = useState<GraphLink[]>([]);
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
@@ -2559,6 +2675,7 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const isPanning = React.useRef(false);
   const panStart = React.useRef({ x: 0, y: 0, tx: 0, ty: 0 });
+  const nodeDragged = React.useRef(false);
 
   // Build graph data
   const { rawNodes, rawLinks } = useMemo(() => {
@@ -2785,6 +2902,7 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
     if ((e.target as HTMLElement).closest('.graph-node')) return;
     isPanning.current = true;
     panStart.current = { x: e.clientX, y: e.clientY, tx: transform.x, ty: transform.y };
+    setHighlightedNode(null);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -2796,6 +2914,7 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
       }));
     }
     if (dragNode && simulationRef.current) {
+      nodeDragged.current = true;
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
       const x = (e.clientX - rect.left - transform.x) / transform.k;
@@ -2821,12 +2940,16 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
         node.fy = null;
         sim.alpha(0.3).restart();
       }
+      if (nodeDragged.current) {
+        setHighlightedNode(null);
+      }
       setDragNode(null);
     }
   };
 
   const handleNodeDragStart = (e: React.MouseEvent, nodeId: string) => {
     e.stopPropagation();
+    nodeDragged.current = false;
     setDragNode(nodeId);
     if (simulationRef.current) {
       const sim = simulationRef.current;
@@ -2871,18 +2994,19 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
     return m;
   }, [graphNodes]);
 
-  // Connected node highlighting
+  // Connected node highlighting (hover or click-highlight)
+  const activeHighlight = hoveredNode || highlightedNode;
   const connectedIds = useMemo(() => {
-    if (!hoveredNode) return new Set<string>();
-    const ids = new Set<string>([hoveredNode]);
+    if (!activeHighlight) return new Set<string>();
+    const ids = new Set<string>([activeHighlight]);
     graphLinks.forEach((l: any) => {
       const src = typeof l.source === 'object' ? l.source.id : l.source;
       const tgt = typeof l.target === 'object' ? l.target.id : l.target;
-      if (src === hoveredNode) ids.add(tgt);
-      if (tgt === hoveredNode) ids.add(src);
+      if (src === activeHighlight) ids.add(tgt);
+      if (tgt === activeHighlight) ids.add(src);
     });
     return ids;
-  }, [hoveredNode, graphLinks]);
+  }, [activeHighlight, graphLinks]);
 
   return (
     <div className="space-y-4" style={{ height: 'calc(100vh - 180px)' }}>
@@ -2987,8 +3111,8 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
               const src = nodeMap[typeof link.source === 'object' ? link.source.id : link.source];
               const tgt = nodeMap[typeof link.target === 'object' ? link.target.id : link.target];
               if (!src || !tgt || src.x == null || tgt.x == null) return null;
-              const isHighlighted = hoveredNode && (connectedIds.has(src.id) && connectedIds.has(tgt.id));
-              const opacity = hoveredNode ? (isHighlighted ? 1 : 0.1) : 0.4;
+              const isHighlighted = activeHighlight && (connectedIds.has(src.id) && connectedIds.has(tgt.id));
+              const opacity = activeHighlight ? (isHighlighted ? 1 : 0.1) : 0.4;
               return (
                 <line
                   key={link.id}
@@ -3009,7 +3133,7 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
               const color = getNodeColor(node);
               const isHovered = hoveredNode === node.id;
               const isConnected = connectedIds.has(node.id);
-              const opacity = hoveredNode ? (isConnected ? 1 : 0.15) : 1;
+              const opacity = activeHighlight ? (isConnected ? 1 : 0.15) : 1;
               const shape = node.nodeType === 'task' ? null : getNodeShape(node, r);
               const showLabel = transform.k > 0.4 || isHovered;
 
@@ -3022,7 +3146,13 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
                   onMouseDown={(e) => handleNodeDragStart(e, node.id)}
                   onMouseEnter={() => setHoveredNode(node.id)}
                   onMouseLeave={() => setHoveredNode(null)}
-                  onClick={(e) => { e.stopPropagation(); setSelectedNode(node); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!nodeDragged.current) {
+                      setHighlightedNode(prev => prev === node.id ? null : node.id);
+                    }
+                  }}
+                  onDoubleClick={(e) => { e.stopPropagation(); setSelectedNode(node); }}
                 >
                   {/* Glow on hover */}
                   {isHovered && (
@@ -3284,6 +3414,7 @@ function TaskList({ tasks, onToggle, onEdit, onDelete, display, onReorder }: { t
   const handleDragStart = (e: React.DragEvent, idx: number) => {
     setDragIdx(idx);
     e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('task-id', (tasks[idx] as any).id);
   };
   const handleDragOver = (e: React.DragEvent, idx: number) => {
     e.preventDefault();
@@ -3426,9 +3557,10 @@ function ProjectCard({ project, onClick, onEdit, onDelete }: { project: Project,
     >
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-start gap-2">
             <h4 className="font-semibold text-gray-900 group-hover:text-accent transition-colors">{project.title}</h4>
             <Badge className={cn(
+              "shrink-0 mt-0.5",
               project.status === 'Done' ? "bg-green-50 text-green-600" :
               project.status === 'In Progress' ? "bg-accent/10 text-accent" :
               "bg-black/5 text-gray-500"
@@ -3807,7 +3939,9 @@ function EditPhaseModal({ phase, appSettings, allPhases, onClose, onSave }: { ph
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Description</label>
             <textarea 
-              className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none h-24 resize-none"
+              className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none resize-none overflow-y-auto"
+              style={{ minHeight: '6rem', maxHeight: '13.5rem' }}
+              onInput={(e) => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 216) + 'px'; }}
               value={edited.description || ''}
               onChange={(e) => setEdited({ ...edited, description: e.target.value })}
               placeholder="Add an optional description..."
@@ -3927,7 +4061,9 @@ function EditAreaModal({ area, areaGroups, onClose, onSave, onDelete }: { area: 
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Description</label>
             <textarea 
-              className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none h-24 resize-none"
+              className="w-full bg-black/5 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none resize-none overflow-y-auto"
+              style={{ minHeight: '6rem', maxHeight: '13.5rem' }}
+              onInput={(e) => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 216) + 'px'; }}
               value={edited.description || ''}
               onChange={(e) => setEdited({ ...edited, description: e.target.value })}
               placeholder="Add an optional description..."
@@ -4093,8 +4229,10 @@ function EditEventModal({ event, project, onClose, onSave }: {
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-black/10 text-sm focus:outline-none focus:ring-2 focus:ring-accent/20 resize-none"
+              className="w-full px-4 py-3 rounded-xl border border-black/10 text-sm focus:outline-none focus:ring-2 focus:ring-accent/20 resize-none overflow-y-auto"
               rows={2}
+              style={{ maxHeight: '13.5rem' }}
+              onInput={(e) => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 216) + 'px'; }}
               placeholder="Brief description..."
             />
           </div>

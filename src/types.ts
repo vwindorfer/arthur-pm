@@ -75,6 +75,7 @@ export interface Project {
   dependsOn?: string[];
   showTimeline?: boolean;
   showProgress?: boolean;
+  taskSortMode?: 'manual' | 'deadline';
   events?: ProjectEvent[];
 }
 
