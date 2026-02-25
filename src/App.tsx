@@ -2310,15 +2310,15 @@ function KanbanView({ data, group, filter, searchQuery, display, showBacklog, de
                       onClick={() => onEdit(task)}
                     >
                       <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center gap-2">
+                        <h5 className="text-sm font-semibold leading-tight">{task.title}</h5>
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <IconButton icon={Edit2} className="p-1" onClick={(e) => { e.stopPropagation(); onEdit(task); }} />
+                            <IconButton icon={Trash2} className="p-1 hover:text-red-500" onClick={(e) => { e.stopPropagation(); onDelete(task.id); }} />
+                          </div>
                           {task.areaColor && (
-                            <div className="w-4 h-4 rounded-full shrink-0 shadow-sm mt-0.5" style={{ backgroundColor: task.areaColor }} />
+                            <div className="w-4 h-4 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: task.areaColor }} />
                           )}
-                          <h5 className="text-sm font-semibold leading-tight">{task.title}</h5>
-                        </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <IconButton icon={Edit2} className="p-1" onClick={(e) => { e.stopPropagation(); onEdit(task); }} />
-                          <IconButton icon={Trash2} className="p-1 hover:text-red-500" onClick={(e) => { e.stopPropagation(); onDelete(task.id); }} />
                         </div>
                       </div>
                       {(task.areaName || task.projectName || task.phaseName) && (
@@ -2939,7 +2939,28 @@ function GraphView({ data, searchQuery, onNavigate }: { data: LifeOSData, search
           Inactive
         </button>
         {/* Legend */}
-        <div className="flex items-center gap-2 ml-auto text-[10px] text-gray-400">
+        <div className="flex items-center gap-3 ml-auto text-[10px] text-gray-400">
+          <span className="flex items-center gap-1">
+            <svg width="14" height="14" viewBox="-7 -7 14 14"><polygon points={Array.from({ length: 6 }, (_, i) => { const a = (Math.PI / 3) * i - Math.PI / 6; return `${Math.cos(a) * 6},${Math.sin(a) * 6}`; }).join(' ')} fill="#6b7280" /></svg>
+            Group
+          </span>
+          <span className="flex items-center gap-1">
+            <svg width="14" height="14" viewBox="-7 -7 14 14"><rect x="-5" y="-5" width="10" height="10" rx="2" fill="#6b7280" /></svg>
+            Area
+          </span>
+          <span className="flex items-center gap-1">
+            <svg width="14" height="14" viewBox="-7 -7 14 14"><polygon points="0,-6 6,0 0,6 -6,0" fill="#6b7280" /></svg>
+            Project
+          </span>
+          <span className="flex items-center gap-1">
+            <svg width="14" height="14" viewBox="-7 -7 14 14"><polygon points={Array.from({ length: 5 }, (_, i) => { const a = (Math.PI * 2 / 5) * i - Math.PI / 2; return `${Math.cos(a) * 6},${Math.sin(a) * 6}`; }).join(' ')} fill="#6b7280" /></svg>
+            Phase
+          </span>
+          <span className="flex items-center gap-1">
+            <svg width="14" height="14" viewBox="-7 -7 14 14"><circle r="5" fill="#6b7280" /></svg>
+            Task
+          </span>
+          <span className="w-px h-3 bg-black/10" />
           <span className="flex items-center gap-1"><span className="w-5 h-0.5 bg-gray-300 inline-block" /> Hierarchy</span>
           <span className="flex items-center gap-1"><span className="w-5 h-0.5 inline-block" style={{ borderTop: '2px dashed #f59e0b' }} /> Dependency</span>
         </div>
@@ -3300,9 +3321,6 @@ function TaskList({ tasks, onToggle, onEdit, onDelete, display, onReorder }: { t
               <GripVertical size={16} />
             </div>
           )}
-          {task.areaColor && (
-            <div className="w-5 h-5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: task.areaColor }} />
-          )}
           <button
             onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}
             className={cn(
@@ -3371,6 +3389,9 @@ function TaskList({ tasks, onToggle, onEdit, onDelete, display, onReorder }: { t
             <IconButton icon={Edit2} onClick={(e) => { e.stopPropagation(); onEdit(task); }} />
             <IconButton icon={Trash2} className="hover:text-red-500" onClick={(e) => { e.stopPropagation(); onDelete(task.id); }} />
           </div>
+          {task.areaColor && (
+            <div className="w-5 h-5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: task.areaColor }} />
+          )}
         </div>
       ))}
       {tasks.length === 0 && (
