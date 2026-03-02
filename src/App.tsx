@@ -49,7 +49,8 @@ import {
   FileType,
   Download,
   ChevronUp,
-  Network
+  Network,
+  FolderOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -104,7 +105,7 @@ export default function App() {
   const { data, updateData, addArea, deleteTask, deleteProject, deleteArea, deleteGroup, deletePhase, syncing, lastSyncError } = useLifeOS();
 
   const [activeView, setActiveView] = useState<{
-    type: 'inbox' | 'area' | 'project' | 'phase' | 'kanban' | 'settings' | 'completed' | 'graph';
+    type: 'inbox' | 'area' | 'project' | 'phase' | 'kanban' | 'settings' | 'completed' | 'graph' | 'projects';
     id?: string;
     parentId?: string;
     grandParentId?: string;
@@ -516,6 +517,12 @@ export default function App() {
     updateData(newData);
   };
 
+  const reorderGroups = (fromIndex: number, toIndex: number) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    newData.areaGroups = handleReorder(newData.areaGroups, fromIndex, toIndex);
+    updateData(newData);
+  };
+
   const reorderProjects = (areaId: string, fromIndex: number, toIndex: number) => {
     const newData = JSON.parse(JSON.stringify(data));
     const area = newData.areas.find((a: any) => a.id === areaId);
@@ -677,6 +684,17 @@ export default function App() {
           >
             <Network size={18} />
             Knowledge Graph
+          </button>
+
+          <button
+            onClick={() => setActiveView({ type: 'projects' })}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium",
+              activeView.type === 'projects' ? "bg-accent/10 text-accent" : "text-gray-600 hover:bg-black/5"
+            )}
+          >
+            <FolderOpen size={18} />
+            Projects
           </button>
 
           {/* Area Groups and Areas */}
@@ -886,6 +904,7 @@ export default function App() {
                   {activeView.type === 'project' && currentProject?.title}
                   {activeView.type === 'phase' && currentPhase?.title}
                   {activeView.type === 'graph' && "Knowledge Graph"}
+                  {activeView.type === 'projects' && "Projects"}
                 </h2>
                 {activeView.type === 'area' && currentArea && (
                   <IconButton icon={Edit2} onClick={() => setEditingArea(currentArea)} />
@@ -1172,6 +1191,21 @@ export default function App() {
                   data={data}
                   searchQuery={searchQuery}
                   onNavigate={setActiveView}
+                />
+              )}
+
+              {activeView.type === 'projects' && (
+                <ProjectsView
+                  data={data}
+                  searchQuery={searchQuery}
+                  onOpenProject={(projectId, areaId) => setActiveView({ type: 'project', id: projectId, parentId: areaId })}
+                  onEditProject={setEditingProject}
+                  onDeleteProject={deleteProject}
+                  onToggleTask={toggleTaskStatus}
+                  onEditTask={setEditingTask}
+                  onDeleteTask={deleteTask}
+                  display={display}
+                  onReorderGroups={reorderGroups}
                 />
               )}
 
@@ -2612,6 +2646,271 @@ function InboxView({ data, sort, group, filter, searchQuery, display, showBacklo
           <TaskList tasks={tasks} onToggle={onToggle} onEdit={onEdit} onDelete={onDelete} display={display} />
         </div>
       ))}
+    </div>
+  );
+}
+
+function ProjectsView({ data, searchQuery, onOpenProject, onEditProject, onDeleteProject, onToggleTask, onEditTask, onDeleteTask, display, onReorderGroups }: {
+  data: LifeOSData, searchQuery?: string,
+  onOpenProject: (projectId: string, areaId: string) => void,
+  onEditProject: (p: Project) => void, onDeleteProject: (id: string) => void,
+  onToggleTask: (id: string) => void, onEditTask: (t: Task) => void, onDeleteTask: (id: string) => void,
+  display?: DisplaySettings,
+  onReorderGroups: (fromIndex: number, toIndex: number) => void
+}) {
+  const [showBacklogged, setShowBacklogged] = useState(false);
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [dragGroupIdx, setDragGroupIdx] = useState<number | null>(null);
+  const [overGroupIdx, setOverGroupIdx] = useState<number | null>(null);
+
+  const toggleExpand = (id: string) => {
+    setExpandedProjects(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleGroupCollapse = (key: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  // Gather all projects grouped by area group, then area
+  const groups = useMemo(() => {
+    const result: { groupTitle: string; groupIndex: number; isDraggable: boolean; areas: { area: Area; projects: Project[] }[] }[] = [];
+
+    // Grouped areas
+    (data.areaGroups || []).forEach((group, idx) => {
+      const areas = data.areas.filter(a => a.groupId === group.id && !a.inactive);
+      const areaEntries = areas.map(area => ({
+        area,
+        projects: area.projects.filter(p => {
+          if (!showBacklogged && p.status === 'Backlog') return false;
+          if (searchQuery) {
+            const q = searchQuery.toLowerCase();
+            if (!p.title.toLowerCase().includes(q) && !p.description.toLowerCase().includes(q)) return false;
+          }
+          return true;
+        })
+      })).filter(e => e.projects.length > 0);
+      if (areaEntries.length > 0) result.push({ groupTitle: group.title, groupIndex: idx, isDraggable: true, areas: areaEntries });
+    });
+
+    // Ungrouped areas
+    const ungrouped = data.areas.filter(a => !a.groupId && !a.inactive);
+    const ungroupedEntries = ungrouped.map(area => ({
+      area,
+      projects: area.projects.filter(p => {
+        if (!showBacklogged && p.status === 'Backlog') return false;
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          if (!p.title.toLowerCase().includes(q) && !p.description.toLowerCase().includes(q)) return false;
+        }
+        return true;
+      })
+    })).filter(e => e.projects.length > 0);
+    if (ungroupedEntries.length > 0) result.push({ groupTitle: 'Other', groupIndex: -1, isDraggable: false, areas: ungroupedEntries });
+
+    return result;
+  }, [data, showBacklogged, searchQuery]);
+
+  const d = display || { showPriority: true, showEnergy: true, showDeadline: true, showLabels: true, showAttachments: true, showDescription: true };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => setShowBacklogged(prev => !prev)}
+          className={cn("text-xs px-3 py-1.5 rounded-full border font-medium transition-colors",
+            showBacklogged ? "border-amber-300 text-amber-700 bg-amber-50" : "border-transparent bg-black/5 text-gray-400"
+          )}
+        >
+          Backlogged
+        </button>
+      </div>
+
+      {groups.map((group, gIdx) => {
+        const isCollapsed = collapsedGroups.has(group.groupTitle);
+        return (
+        <div
+          key={group.groupTitle}
+          className={cn("space-y-6", overGroupIdx === gIdx && dragGroupIdx !== null && dragGroupIdx !== gIdx && "border-t-2 border-accent/30")}
+          draggable={group.isDraggable}
+          onDragStart={(e) => {
+            if (!group.isDraggable) { e.preventDefault(); return; }
+            e.dataTransfer.setData('group-reorder', String(group.groupIndex));
+            e.dataTransfer.effectAllowed = 'move';
+            setDragGroupIdx(gIdx);
+          }}
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes('group-reorder')) { e.preventDefault(); setOverGroupIdx(gIdx); }
+          }}
+          onDragLeave={() => setOverGroupIdx(null)}
+          onDrop={(e) => {
+            const fromStr = e.dataTransfer.getData('group-reorder');
+            if (fromStr !== '') {
+              e.preventDefault();
+              const fromIdx = parseInt(fromStr);
+              const target = groups[gIdx];
+              if (target.isDraggable && fromIdx !== target.groupIndex) {
+                onReorderGroups(fromIdx, target.groupIndex);
+              }
+            }
+            setDragGroupIdx(null);
+            setOverGroupIdx(null);
+          }}
+          onDragEnd={() => { setDragGroupIdx(null); setOverGroupIdx(null); }}
+        >
+          <div className="flex items-center gap-2">
+            {group.isDraggable && (
+              <div className="cursor-grab text-gray-300 hover:text-gray-400"><GripVertical size={14} /></div>
+            )}
+            <button onClick={() => toggleGroupCollapse(group.groupTitle)} className="text-gray-400 hover:text-accent transition-colors">
+              <ChevronRight size={14} className={cn("transition-transform", !isCollapsed && "rotate-90")} />
+            </button>
+            <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{group.groupTitle}</h3>
+            <span className="text-[10px] text-gray-300">{group.areas.reduce((acc, a) => acc + a.projects.length, 0)}</span>
+          </div>
+          <AnimatePresence>
+          {!isCollapsed && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden space-y-6"
+          >
+          {group.areas.map(({ area, projects }) => (
+            <div key={area.id} className="space-y-3">
+              <div className="flex items-center gap-2 px-1">
+                {area.color && <div className="w-3 h-3 rounded-full" style={{ backgroundColor: area.color }} />}
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{area.title}</span>
+              </div>
+              <div className="space-y-3">
+                {projects.map(project => {
+                  const isExpanded = expandedProjects.has(project.id);
+                  const allTasks = [
+                    ...project.tasks.filter(t => t.status !== 'Done'),
+                    ...project.phases.flatMap(ph => ph.tasks.filter(t => t.status !== 'Done'))
+                  ];
+                  const completedCount = (project.tasks.filter(t => t.status === 'Done').length) + project.phases.reduce((acc, ph) => acc + ph.tasks.filter(t => t.status === 'Done').length, 0);
+                  const totalCount = allTasks.length + completedCount;
+                  const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+
+                  return (
+                    <div key={project.id} className="glass rounded-2xl overflow-hidden transition-all">
+                      <div className="p-5 flex items-start gap-3">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleExpand(project.id); }}
+                          className="mt-1 text-gray-400 hover:text-accent transition-colors shrink-0"
+                        >
+                          <ChevronRight size={16} className={cn("transition-transform", isExpanded && "rotate-90")} />
+                        </button>
+                        <div
+                          className="flex-1 min-w-0 cursor-pointer"
+                          onClick={() => onOpenProject(project.id, area.id)}
+                        >
+                          <div className="flex items-start gap-2">
+                            <h4 className="font-semibold text-gray-900 hover:text-accent transition-colors">{project.title}</h4>
+                            <Badge className={cn(
+                              "shrink-0 mt-0.5",
+                              project.status === 'Done' ? "bg-green-50 text-green-600" :
+                              project.status === 'In Progress' ? "bg-accent/10 text-accent" :
+                              "bg-black/5 text-gray-500"
+                            )}>{project.status}</Badge>
+                          </div>
+                          {project.description && (
+                            <p className="text-xs text-gray-500 mt-1 line-clamp-1">{project.description}</p>
+                          )}
+                          <div className="flex items-center gap-4 mt-2 text-[10px] text-gray-400 font-medium uppercase tracking-wider">
+                            <span>{completedCount}/{totalCount} tasks</span>
+                            <span>{format(new Date(project.startDate), 'MMM d')} – {format(new Date(project.endDate), 'MMM d')}</span>
+                            {project.phases.length > 0 && <span>{project.phases.length} phases</span>}
+                          </div>
+                          {project.showProgress !== false && totalCount > 0 && (
+                            <div className="h-1.5 w-full bg-black/5 rounded-full overflow-hidden mt-2 max-w-xs">
+                              <motion.div initial={{ width: 0 }} animate={{ width: `${progress}%` }} className="h-full bg-accent" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <IconButton icon={Edit2} onClick={(e) => { e.stopPropagation(); onEditProject(project); }} />
+                          <IconButton icon={Trash2} className="hover:text-red-500" onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }} />
+                        </div>
+                      </div>
+
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-5 pb-5 pt-0 border-t border-black/5 space-y-4">
+                              {project.tasks.filter(t => t.status !== 'Done').length > 0 && (
+                                <div className="pt-4 space-y-2">
+                                  <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">Project Tasks</span>
+                                  <TaskList
+                                    tasks={project.tasks.filter(t => t.status !== 'Done')}
+                                    onToggle={onToggleTask}
+                                    onEdit={onEditTask}
+                                    onDelete={onDeleteTask}
+                                    display={d}
+                                  />
+                                </div>
+                              )}
+                              {project.phases.map(phase => {
+                                const phaseTasks = phase.tasks.filter(t => t.status !== 'Done');
+                                if (phaseTasks.length === 0) return null;
+                                return (
+                                  <div key={phase.id} className="pt-2 space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">{phase.title}</span>
+                                      <Badge className="bg-black/5 text-gray-400 border-none text-[9px]">{phase.status}</Badge>
+                                    </div>
+                                    <TaskList
+                                      tasks={phaseTasks}
+                                      onToggle={onToggleTask}
+                                      onEdit={onEditTask}
+                                      onDelete={onDeleteTask}
+                                      display={d}
+                                    />
+                                  </div>
+                                );
+                              })}
+                              {allTasks.length === 0 && (
+                                <p className="text-xs text-gray-400 italic pt-4">No open tasks</p>
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          </motion.div>
+          )}
+          </AnimatePresence>
+        </div>
+        );
+      })}
+
+      {groups.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+          <FolderOpen size={32} className="mb-2 opacity-20" />
+          <p className="text-sm">No projects found</p>
+        </div>
+      )}
     </div>
   );
 }
