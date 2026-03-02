@@ -50,7 +50,8 @@ import {
   Download,
   ChevronUp,
   Network,
-  FolderOpen
+  FolderOpen,
+  BarChart2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -1206,6 +1207,20 @@ export default function App() {
                   onDeleteTask={deleteTask}
                   display={display}
                   onReorderGroups={reorderGroups}
+                  onCycleProgressMode={(projectId) => {
+                    const newData = JSON.parse(JSON.stringify(data));
+                    newData.areas.forEach((a: any) => {
+                      const p = a.projects.find((p: any) => p.id === projectId);
+                      if (p) {
+                        const isNone = p.showProgress === false && p.showTimeline === false;
+                        const isTimeline = p.showProgress === false && p.showTimeline !== false;
+                        if (isNone) { p.showProgress = true; p.showTimeline = false; }
+                        else if (isTimeline) { p.showProgress = false; p.showTimeline = false; }
+                        else { p.showProgress = false; p.showTimeline = true; }
+                      }
+                    });
+                    updateData(newData);
+                  }}
                 />
               )}
 
@@ -1326,42 +1341,110 @@ export default function App() {
                   {currentProject.description && (
                     <p className="text-sm text-gray-500 -mt-4 max-w-2xl leading-relaxed">{currentProject.description}</p>
                   )}
-                  <div className="glass p-6 rounded-2xl flex items-center justify-between">
-                    <div className="flex items-center gap-6">
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Calendar size={16} />
-                        {format(new Date(currentProject.startDate), 'MMM d')} - {format(new Date(currentProject.endDate), 'MMM d, yyyy')}
+                  <div className="glass p-6 rounded-2xl space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-6">
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <Calendar size={16} />
+                          {format(new Date(currentProject.startDate), 'MMM d')} - {format(new Date(currentProject.endDate), 'MMM d, yyyy')}
+                        </div>
+                        <div className="h-4 w-px bg-black/5" />
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <Layers size={16} />
+                          {currentProject.phases.length} Phases
+                        </div>
+                        <div className="h-4 w-px bg-black/5" />
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <Badge className="bg-accent/10 text-accent border-none">{currentProject.status}</Badge>
+                        </div>
                       </div>
-                      <div className="h-4 w-px bg-black/5" />
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Layers size={16} />
-                        {currentProject.phases.length} Phases
-                      </div>
-                      <div className="h-4 w-px bg-black/5" />
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Badge className="bg-accent/10 text-accent border-none">{currentProject.status}</Badge>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => {
+                            const newData = JSON.parse(JSON.stringify(data));
+                            newData.areas.forEach((a: any) => {
+                              const p = a.projects.find((p: any) => p.id === currentProject.id);
+                              if (p) p.taskSortMode = p.taskSortMode === 'deadline' ? 'manual' : 'deadline';
+                            });
+                            updateData(newData);
+                          }}
+                          className={cn("flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors",
+                            currentProject.taskSortMode === 'deadline' ? "bg-accent/10 text-accent" : "bg-black/5 text-gray-500 hover:bg-black/10"
+                          )}
+                          title={currentProject.taskSortMode === 'deadline' ? 'Switch to manual sorting' : 'Sort tasks by deadline'}
+                        >
+                          <ArrowUpDown size={14} />
+                          {currentProject.taskSortMode === 'deadline' ? 'By Deadline' : 'Manual'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            const newData = JSON.parse(JSON.stringify(data));
+                            newData.areas.forEach((a: any) => {
+                              const p = a.projects.find((p: any) => p.id === currentProject.id);
+                              if (p) {
+                                const isNone = p.showProgress === false && p.showTimeline === false;
+                                const isTimeline = p.showProgress === false && p.showTimeline !== false;
+                                if (isNone) { p.showProgress = true; p.showTimeline = false; }
+                                else if (isTimeline) { p.showProgress = false; p.showTimeline = false; }
+                                else { p.showProgress = false; p.showTimeline = true; }
+                              }
+                            });
+                            updateData(newData);
+                          }}
+                          className={cn("flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors",
+                            !(currentProject.showProgress === false && currentProject.showTimeline === false)
+                              ? "bg-accent/10 text-accent" : "bg-black/5 text-gray-500 hover:bg-black/10"
+                          )}
+                          title="Cycle through progress bar: Tasks → Timeline → None"
+                        >
+                          <BarChart2 size={14} />
+                          {currentProject.showProgress === false && currentProject.showTimeline === false ? 'No Progress'
+                            : currentProject.showProgress === false ? 'Timeline'
+                            : 'Tasks'}
+                        </button>
+                        <IconButton icon={Edit2} onClick={() => setEditingProject(currentProject)} />
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => {
-                          const newData = JSON.parse(JSON.stringify(data));
-                          newData.areas.forEach((a: any) => {
-                            const p = a.projects.find((p: any) => p.id === currentProject.id);
-                            if (p) p.taskSortMode = p.taskSortMode === 'deadline' ? 'manual' : 'deadline';
-                          });
-                          updateData(newData);
-                        }}
-                        className={cn("flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors",
-                          currentProject.taskSortMode === 'deadline' ? "bg-accent/10 text-accent" : "bg-black/5 text-gray-500 hover:bg-black/10"
-                        )}
-                        title={currentProject.taskSortMode === 'deadline' ? 'Switch to manual sorting' : 'Sort tasks by deadline'}
-                      >
-                        <ArrowUpDown size={14} />
-                        {currentProject.taskSortMode === 'deadline' ? 'By Deadline' : 'Manual'}
-                      </button>
-                      <IconButton icon={Edit2} onClick={() => setEditingProject(currentProject)} />
-                    </div>
+                    {(() => {
+                      const allProjTasks = [...(currentProject.tasks || []), ...currentProject.phases.flatMap(ph => ph.tasks)];
+                      const completedCount = allProjTasks.filter(t => t.status === 'Done').length;
+                      const totalCount = allProjTasks.length;
+                      const taskPct = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+                      const now = Date.now();
+                      const start = new Date(currentProject.startDate).getTime();
+                      const end = new Date(currentProject.endDate).getTime();
+                      const timePct = start < end ? Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100)) : 0;
+                      const isNone = currentProject.showProgress === false && currentProject.showTimeline === false;
+                      const showTaskBar = !isNone && currentProject.showProgress !== false;
+                      const showTimelineBar = !isNone && currentProject.showTimeline !== false;
+                      if (!showTaskBar && !showTimelineBar) return null;
+                      return (
+                        <div className="space-y-2">
+                          {showTaskBar && totalCount > 0 && (
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                                <span>Tasks</span>
+                                <span>{completedCount}/{totalCount} ({Math.round(taskPct)}%)</span>
+                              </div>
+                              <div className="h-1.5 w-full bg-black/5 rounded-full overflow-hidden">
+                                <motion.div initial={{ width: 0 }} animate={{ width: `${taskPct}%` }} className="h-full bg-accent" />
+                              </div>
+                            </div>
+                          )}
+                          {showTimelineBar && (
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                                <span>Timeline</span>
+                                <span>{Math.round(timePct)}%</span>
+                              </div>
+                              <div className="h-1.5 w-full bg-black/5 rounded-full overflow-hidden">
+                                <motion.div initial={{ width: 0 }} animate={{ width: `${timePct}%` }} className={cn("h-full", timePct > taskPct + 20 ? "bg-red-400" : "bg-emerald-400")} />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1402,7 +1485,8 @@ export default function App() {
                           onToggle={toggleTaskStatus}
                           onEdit={setEditingTask}
                           onDelete={deleteTask}
-                          display={display}
+                          display={{ showPriority: false, showEnergy: false, showDeadline: true, showLabels: false, showAttachments: false, showDescription: true }}
+                          hideParentContext
                           onReorder={currentProject.taskSortMode !== 'deadline' ? (from, to) => reorderTasks(currentProject.tasks, from, to, 'project', currentProject.id) : undefined}
                         />
                       </div>
@@ -1498,7 +1582,8 @@ export default function App() {
                             onToggle={toggleTaskStatus}
                             onEdit={setEditingTask}
                             onDelete={deleteTask}
-                            display={display}
+                            display={{ showPriority: false, showEnergy: false, showDeadline: true, showLabels: false, showAttachments: false, showDescription: true }}
+                            hideParentContext
                             onReorder={currentProject.taskSortMode !== 'deadline' ? (from, to) => reorderTasks(phase.tasks, from, to, 'phase', phase.id) : undefined}
                           />
                         </div>
@@ -1545,7 +1630,7 @@ export default function App() {
                           const isPast = diffMs < 0;
                           const linkedPhases = currentProject.phases.filter(ph => event.linkedPhaseIds?.includes(ph.id));
                           const allTasks = [...currentProject.tasks, ...currentProject.phases.flatMap(ph => ph.tasks)];
-                          const linkedTasks = allTasks.filter(t => event.linkedTaskIds?.includes(t.id));
+                          const linkedTasks = allTasks.filter(t => event.linkedTaskIds?.includes(t.id) && t.status !== 'Done');
 
                           return (
                             <div key={event.id} className="glass p-4 rounded-xl space-y-2">
@@ -1984,29 +2069,30 @@ function EditTaskModal({ task, data, appSettings, onClose, onSave, onMove }: { t
             label="Dependencies"
             items={(() => {
               const scopedTasks: Task[] = [];
+              const isEligible = (t: Task) => t.id !== task.id && t.status !== 'Done';
               if (currentLocation.projectId) {
                 data.areas.forEach(a => a.projects.forEach(p => {
                   if (p.id === currentLocation.projectId) {
-                    p.tasks.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); });
-                    p.phases.forEach(ph => ph.tasks.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); }));
+                    p.tasks.forEach(t => { if (isEligible(t)) scopedTasks.push(t); });
+                    p.phases.forEach(ph => ph.tasks.forEach(t => { if (isEligible(t)) scopedTasks.push(t); }));
                   }
                 }));
               } else if (currentLocation.areaId) {
                 const area = data.areas.find(a => a.id === currentLocation.areaId);
                 if (area) {
-                  (area.tasks || []).forEach(t => { if (t.id !== task.id) scopedTasks.push(t); });
+                  (area.tasks || []).forEach(t => { if (isEligible(t)) scopedTasks.push(t); });
                   area.projects.forEach(p => {
-                    p.tasks.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); });
-                    p.phases.forEach(ph => ph.tasks.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); }));
+                    p.tasks.forEach(t => { if (isEligible(t)) scopedTasks.push(t); });
+                    p.phases.forEach(ph => ph.tasks.forEach(t => { if (isEligible(t)) scopedTasks.push(t); }));
                   });
                 }
               } else {
-                data.inbox.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); });
+                data.inbox.forEach(t => { if (isEligible(t)) scopedTasks.push(t); });
                 data.areas.forEach(a => {
-                  (a.tasks || []).forEach(t => { if (t.id !== task.id) scopedTasks.push(t); });
+                  (a.tasks || []).forEach(t => { if (isEligible(t)) scopedTasks.push(t); });
                   a.projects.forEach(p => {
-                    p.tasks.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); });
-                    p.phases.forEach(ph => ph.tasks.forEach(t => { if (t.id !== task.id) scopedTasks.push(t); }));
+                    p.tasks.forEach(t => { if (isEligible(t)) scopedTasks.push(t); });
+                    p.phases.forEach(ph => ph.tasks.forEach(t => { if (isEligible(t)) scopedTasks.push(t); }));
                   });
                 });
               }
@@ -2225,26 +2311,30 @@ function EditProjectModal({ project, areas, appSettings, onClose, onSave, onMove
             </div>
           </div>
           <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Card Display</label>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-600">Show task progress bar</span>
-                <button
-                  onClick={() => setEdited({ ...edited, showProgress: !(edited.showProgress !== false) })}
-                  className={cn("w-9 h-5 rounded-full transition-colors flex items-center px-0.5", (edited.showProgress !== false) ? "bg-accent justify-end" : "bg-black/10 justify-start")}
-                >
-                  <div className="w-3.5 h-3.5 bg-white rounded-full shadow-sm" />
-                </button>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-600">Show timeline progress bar</span>
-                <button
-                  onClick={() => setEdited({ ...edited, showTimeline: !(edited.showTimeline !== false) })}
-                  className={cn("w-9 h-5 rounded-full transition-colors flex items-center px-0.5", (edited.showTimeline !== false) ? "bg-accent justify-end" : "bg-black/10 justify-start")}
-                >
-                  <div className="w-3.5 h-3.5 bg-white rounded-full shadow-sm" />
-                </button>
-              </div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Progress Bar</label>
+            <div className="flex gap-1 bg-black/5 rounded-xl p-1">
+              {(['none', 'tasks', 'timeline'] as const).map(mode => {
+                const isActive =
+                  mode === 'none' ? (edited.showProgress === false && edited.showTimeline === false) :
+                  mode === 'tasks' ? (edited.showProgress !== false && edited.showTimeline === false) :
+                  (edited.showTimeline !== false && edited.showProgress === false);
+                return (
+                  <button
+                    key={mode}
+                    onClick={() => setEdited({
+                      ...edited,
+                      showProgress: mode === 'tasks',
+                      showTimeline: mode === 'timeline',
+                    })}
+                    className={cn(
+                      "flex-1 text-xs py-1.5 rounded-lg transition-colors font-medium capitalize",
+                      isActive ? "bg-white text-gray-900 shadow-sm" : "text-gray-400 hover:text-gray-600"
+                    )}
+                  >
+                    {mode === 'none' ? 'None' : mode === 'tasks' ? 'Tasks' : 'Timeline'}
+                  </button>
+                );
+              })}
             </div>
           </div>
           <div>
@@ -2650,13 +2740,14 @@ function InboxView({ data, sort, group, filter, searchQuery, display, showBacklo
   );
 }
 
-function ProjectsView({ data, searchQuery, onOpenProject, onEditProject, onDeleteProject, onToggleTask, onEditTask, onDeleteTask, display, onReorderGroups }: {
+function ProjectsView({ data, searchQuery, onOpenProject, onEditProject, onDeleteProject, onToggleTask, onEditTask, onDeleteTask, display, onReorderGroups, onCycleProgressMode }: {
   data: LifeOSData, searchQuery?: string,
   onOpenProject: (projectId: string, areaId: string) => void,
   onEditProject: (p: Project) => void, onDeleteProject: (id: string) => void,
   onToggleTask: (id: string) => void, onEditTask: (t: Task) => void, onDeleteTask: (id: string) => void,
   display?: DisplaySettings,
-  onReorderGroups: (fromIndex: number, toIndex: number) => void
+  onReorderGroups: (fromIndex: number, toIndex: number) => void,
+  onCycleProgressMode: (projectId: string) => void
 }) {
   const [showBacklogged, setShowBacklogged] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
@@ -2800,7 +2891,14 @@ function ProjectsView({ data, searchQuery, onOpenProject, onEditProject, onDelet
                   ];
                   const completedCount = (project.tasks.filter(t => t.status === 'Done').length) + project.phases.reduce((acc, ph) => acc + ph.tasks.filter(t => t.status === 'Done').length, 0);
                   const totalCount = allTasks.length + completedCount;
-                  const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+                  const taskProgress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+                  const now = Date.now();
+                  const pStart = new Date(project.startDate).getTime();
+                  const pEnd = new Date(project.endDate).getTime();
+                  const timelineProgress = pStart < pEnd ? Math.min(100, Math.max(0, ((now - pStart) / (pEnd - pStart)) * 100)) : 0;
+                  const progressIsNone = project.showProgress === false && project.showTimeline === false;
+                  const showTaskBar = !progressIsNone && project.showProgress !== false;
+                  const showTimelineBar = !progressIsNone && project.showTimeline !== false;
 
                   return (
                     <div key={project.id} className="glass rounded-2xl overflow-hidden transition-all">
@@ -2832,13 +2930,32 @@ function ProjectsView({ data, searchQuery, onOpenProject, onEditProject, onDelet
                             <span>{format(new Date(project.startDate), 'MMM d')} – {format(new Date(project.endDate), 'MMM d')}</span>
                             {project.phases.length > 0 && <span>{project.phases.length} phases</span>}
                           </div>
-                          {project.showProgress !== false && totalCount > 0 && (
-                            <div className="h-1.5 w-full bg-black/5 rounded-full overflow-hidden mt-2 max-w-xs">
-                              <motion.div initial={{ width: 0 }} animate={{ width: `${progress}%` }} className="h-full bg-accent" />
+                          {showTaskBar && totalCount > 0 && (
+                            <div className="space-y-0.5 mt-2 max-w-xs">
+                              <div className="h-1.5 w-full bg-black/5 rounded-full overflow-hidden">
+                                <motion.div initial={{ width: 0 }} animate={{ width: `${taskProgress}%` }} className="h-full bg-accent" />
+                              </div>
+                            </div>
+                          )}
+                          {showTimelineBar && (
+                            <div className="space-y-0.5 mt-2 max-w-xs">
+                              <div className="h-1.5 w-full bg-black/5 rounded-full overflow-hidden">
+                                <motion.div initial={{ width: 0 }} animate={{ width: `${timelineProgress}%` }} className={cn("h-full", timelineProgress > taskProgress + 20 ? "bg-red-400" : "bg-emerald-400")} />
+                              </div>
                             </div>
                           )}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onCycleProgressMode(project.id); }}
+                            className={cn(
+                              "p-1.5 rounded-lg transition-colors",
+                              !progressIsNone ? "text-accent bg-accent/10 hover:bg-accent/20" : "text-gray-400 hover:text-gray-600 hover:bg-black/5"
+                            )}
+                            title={progressIsNone ? 'Show tasks progress' : project.showProgress === false ? 'Hide progress' : 'Show timeline progress'}
+                          >
+                            <BarChart2 size={14} />
+                          </button>
                           <IconButton icon={Edit2} onClick={(e) => { e.stopPropagation(); onEditProject(project); }} />
                           <IconButton icon={Trash2} className="hover:text-red-500" onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }} />
                         </div>
@@ -2862,7 +2979,8 @@ function ProjectsView({ data, searchQuery, onOpenProject, onEditProject, onDelet
                                     onToggle={onToggleTask}
                                     onEdit={onEditTask}
                                     onDelete={onDeleteTask}
-                                    display={d}
+                                    display={{ showPriority: false, showEnergy: false, showDeadline: true, showLabels: false, showAttachments: false, showDescription: true }}
+                                    hideParentContext
                                   />
                                 </div>
                               )}
@@ -2880,7 +2998,8 @@ function ProjectsView({ data, searchQuery, onOpenProject, onEditProject, onDelet
                                       onToggle={onToggleTask}
                                       onEdit={onEditTask}
                                       onDelete={onDeleteTask}
-                                      display={d}
+                                      display={{ showPriority: false, showEnergy: false, showDeadline: true, showLabels: false, showAttachments: false, showDescription: true }}
+                                      hideParentContext
                                     />
                                   </div>
                                 );
@@ -3722,7 +3841,7 @@ function SettingsView({ data, updateData, deleteArea }: { data: any, updateData:
   );
 }
 
-function TaskList({ tasks, onToggle, onEdit, onDelete, display, onReorder }: { tasks: Task[], onToggle: (id: string) => void, onEdit: (t: Task) => void, onDelete: (id: string) => void, display?: DisplaySettings, onReorder?: (fromIndex: number, toIndex: number) => void }) {
+function TaskList({ tasks, onToggle, onEdit, onDelete, display, onReorder, hideParentContext }: { tasks: Task[], onToggle: (id: string) => void, onEdit: (t: Task) => void, onDelete: (id: string) => void, display?: DisplaySettings, onReorder?: (fromIndex: number, toIndex: number) => void, hideParentContext?: boolean }) {
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
 
@@ -3783,7 +3902,7 @@ function TaskList({ tasks, onToggle, onEdit, onDelete, display, onReorder }: { t
             )}>
               {task.title}
             </h5>
-            {(task.areaName || task.projectName || task.phaseName) && (
+            {!hideParentContext && (task.areaName || task.projectName || task.phaseName) && (
               <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider mt-0.5 flex items-center gap-1">
                 {task.areaColor ? <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: task.areaColor }} /> : <Layers size={10} />}
                 {task.areaName || 'Inbox'}
@@ -3835,7 +3954,7 @@ function TaskList({ tasks, onToggle, onEdit, onDelete, display, onReorder }: { t
             <IconButton icon={Edit2} onClick={(e) => { e.stopPropagation(); onEdit(task); }} />
             <IconButton icon={Trash2} className="hover:text-red-500" onClick={(e) => { e.stopPropagation(); onDelete(task.id); }} />
           </div>
-          {task.areaColor && (
+          {!hideParentContext && task.areaColor && (
             <div className="w-5 h-5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: task.areaColor }} />
           )}
         </div>
@@ -4508,12 +4627,14 @@ function EditEventModal({ event, project, onClose, onSave }: {
   const [date, setDate] = useState(event?.date || new Date().toISOString().split('T')[0]);
   const [time, setTime] = useState(event?.time || '');
   const [linkedPhaseIds, setLinkedPhaseIds] = useState<string[]>(event?.linkedPhaseIds || []);
-  const [linkedTaskIds, setLinkedTaskIds] = useState<string[]>(event?.linkedTaskIds || []);
-
-  const allTasks = [...project.tasks, ...project.phases.flatMap(ph => ph.tasks)];
+  const allTasks = [...project.tasks, ...project.phases.flatMap(ph => ph.tasks)].filter(t => t.status !== 'Done');
+  const [linkedTaskIds, setLinkedTaskIds] = useState<string[]>(
+    (event?.linkedTaskIds || []).filter(id => allTasks.some(t => t.id === id))
+  );
 
   const handleSave = () => {
     if (!title.trim()) return;
+    const openLinkedTaskIds = linkedTaskIds.filter(id => allTasks.some(t => t.id === id));
     onSave({
       id: event?.id || Math.random().toString(36).substring(2, 11),
       title: title.trim(),
@@ -4521,7 +4642,7 @@ function EditEventModal({ event, project, onClose, onSave }: {
       date,
       time: time || undefined,
       linkedPhaseIds: linkedPhaseIds.length > 0 ? linkedPhaseIds : undefined,
-      linkedTaskIds: linkedTaskIds.length > 0 ? linkedTaskIds : undefined,
+      linkedTaskIds: openLinkedTaskIds.length > 0 ? openLinkedTaskIds : undefined,
     });
   };
 
